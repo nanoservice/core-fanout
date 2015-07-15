@@ -1,0 +1,6 @@
+syntax = "proto3";
+
+message Heartbeat {
+  string id = 1;
+  string topic = 2;
+}

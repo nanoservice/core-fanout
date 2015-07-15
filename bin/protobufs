@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+cd ./messages
+docker run -it --rm -v $PWD:/user-src:rw -u $(id -u):$(id -g) -w /user-src nanoservice/protobuf-go --go_out=. *.proto
