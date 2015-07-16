@@ -16,7 +16,7 @@ kafka:
 
 fanout:
   build: "."
-  dockerfile: "./fanout/Dockerfile"
+  dockerfile: "./Dockerfile"
   ports:
     - "4987"
   links:
