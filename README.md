@@ -37,7 +37,8 @@ TODO
 ## Development
 
 * `bin/deps` to install all dependencies
-* `bin/test` to run all tests
+* `bin/test` to run all unit tests
+* `bin/integration` to run all unit+integration tests
 * `bin/protobufs` to re-generate protobufs
 
 Use normal TDD development style.
