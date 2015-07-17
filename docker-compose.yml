@@ -21,6 +21,7 @@ fanout:
     - "4987"
   links:
     - "kafka:kafka"
+  command: "--id test_service --topic test_topic"
 
 integration:
   build: "."
