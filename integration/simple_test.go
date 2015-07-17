@@ -80,7 +80,7 @@ func assertReceived(t *testing.T, inbox chan *userneed.UserNeed, expected *usern
 			t.Errorf("Expected %v to equal to %v", *actual, *expected)
 		}
 
-	case <-time.After(5 * time.Millisecond):
+	case <-time.After(50 * time.Millisecond):
 		t.Errorf("Expected to receive %v, got nothing", *expected)
 	}
 }
