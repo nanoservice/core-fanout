@@ -1,7 +1,6 @@
 package fanout
 
 import (
-	"fmt"
 	kafka "github.com/Shopify/sarama"
 	_ "github.com/golang/protobuf/proto"
 	"os"

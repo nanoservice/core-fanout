@@ -58,6 +58,20 @@ func TestOneConsumer(t *testing.T) {
 	assertReceived(t, inbox, messageC)
 }
 
+func TestMultipleConsumers(t *testing.T) {
+	inboxA := subscriptionInbox(t)
+	inboxB := subscriptionInbox(t)
+	producer := newProducer()
+
+	producer.Publish(messageA)
+	producer.Publish(messageB)
+	producer.Publish(messageC)
+
+	assertReceived(t, inboxA, messageA)
+	assertReceived(t, inboxB, messageB)
+	assertReceived(t, inboxA, messageC)
+}
+
 func subscriptionInbox(t *testing.T) (inbox chan *userneed.UserNeed) {
 	inbox = make(chan *userneed.UserNeed)
 
@@ -80,7 +94,7 @@ func assertReceived(t *testing.T, inbox chan *userneed.UserNeed, expected *usern
 			t.Errorf("Expected %v to equal to %v", *actual, *expected)
 		}
 
-	case <-time.After(50 * time.Millisecond):
+	case <-time.After(100 * time.Millisecond):
 		t.Errorf("Expected to receive %v, got nothing", *expected)
 	}
 }
