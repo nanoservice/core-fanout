@@ -46,7 +46,7 @@ var (
 )
 
 func TestOneConsumer(t *testing.T) {
-	inbox := subscriptionInbox(t)
+	inbox := subscriptionInbox(t, "INSTANCE_0")
 	producer := newProducer()
 
 	producer.Publish(messageA)
@@ -59,8 +59,8 @@ func TestOneConsumer(t *testing.T) {
 }
 
 func TestMultipleConsumers(t *testing.T) {
-	inboxA := subscriptionInbox(t)
-	inboxB := subscriptionInbox(t)
+	inboxA := subscriptionInbox(t, "INSTANCE_0")
+	inboxB := subscriptionInbox(t, "INSTANCE_1")
 	producer := newProducer()
 
 	producer.Publish(messageA)
@@ -72,10 +72,10 @@ func TestMultipleConsumers(t *testing.T) {
 	assertReceived(t, inboxA, messageC)
 }
 
-func subscriptionInbox(t *testing.T) (inbox chan *userneed.UserNeed) {
+func subscriptionInbox(t *testing.T, instanceId string) (inbox chan *userneed.UserNeed) {
 	inbox = make(chan *userneed.UserNeed)
 
-	newConsumer().Subscribe(func(raw fanout.Message) {
+	newConsumer(instanceId).Subscribe(func(raw fanout.Message) {
 		message := &userneed.UserNeed{}
 		err := proto.Unmarshal(raw.Value, message)
 		if err != nil {
@@ -124,9 +124,9 @@ func newProducer() AsyncProducer {
 	return AsyncProducer{producer}
 }
 
-func newConsumer() (consumer fanout.Consumer) {
+func newConsumer(instanceId string) (consumer fanout.Consumer) {
 	_ = retry(func() (err error) {
-		consumer, err = fanout.NewConsumer(fanouts, "test_service", "test_topic")
+		consumer, err = fanout.NewConsumer(fanouts, instanceId)
 		return
 	})
 	return
