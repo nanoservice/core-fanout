@@ -128,6 +128,7 @@ func handleClient(conn net.Conn) {
 
 	autoReRead(func() (err error) {
 		instanceId, err = reader.ReadString(byte('\n'))
+		fmt.Printf("got client: %s\n", instanceId)
 		return
 	})
 
@@ -139,16 +140,22 @@ func handleClient(conn net.Conn) {
 			go func() {
 				buf := new(bytes.Buffer)
 
-				var size int = len(message.value)
+				var size int32 = int32(len(message.value))
 				err := binary.Write(buf, binary.LittleEndian, size)
 				if err != nil {
-					fmt.Println("Unable to dump message size to buffer")
+					fmt.Printf("Unable to dump message size to buffer: %v\n", err)
 					return
 				}
 
 				_, err = buf.Write(message.value)
 				if err != nil {
-					fmt.Println("Unable to dump raw message to buffer")
+					fmt.Printf("Unable to dump raw message to buffer: %v\n", err)
+					return
+				}
+
+				_, err = buf.WriteTo(conn)
+				if err != nil {
+					fmt.Printf("Unable to write to client connection: %v\n", err)
 					return
 				}
 			}()

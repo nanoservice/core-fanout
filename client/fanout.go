@@ -20,7 +20,7 @@ type Consumer struct {
 
 type listenState struct {
 	state    int
-	sizeLeft int
+	sizeLeft int32
 }
 
 const (
@@ -63,49 +63,64 @@ func (c Consumer) listen() error {
 		data := make([]byte, 4096)
 		state := listenState{STATE_WAIT_SIZE, 0}
 
-		for {
+		fmt.Printf("Trying to read from socket")
+
+		n, err := conn.Read(data)
+		if err != nil {
+			fmt.Printf("error: %v\n", err)
+			return
+		}
+
+		fmt.Printf("Read %d bytes from socket\n", n)
+
+		reader := bytes.NewBuffer(data[0:n])
+
+		eobError := errors.New("short buffer")
+		autoReRead = func(fn func() error) error {
+			bytesBefore := reader.Bytes()
+
+			err := fn()
+
+			if err == nil {
+				return nil
+			}
+
+			fmt.Printf("autoReRead: err was %v\n", err)
+
+			fmt.Printf("Trying to read from socket")
+
 			n, err := conn.Read(data)
 			if err != nil {
 				fmt.Printf("error: %v\n", err)
-				return
+				return err
 			}
 
-			reader := bytes.NewBuffer(data[0:n])
+			fmt.Printf("Read %d bytes from socket\n", n)
 
-			eobError := errors.New("short buffer")
-			autoReRead = func(fn func() error) error {
-				bytesBefore := reader.Bytes()
+			reader = bytes.NewBuffer(
+				append(bytesBefore, data[0:n]...),
+			)
 
-				if fn() == nil {
-					return nil
-				}
+			return autoReRead(fn)
+		}
 
-				n, err := conn.Read(data)
-				if err != nil {
-					fmt.Printf("error: %v\n", err)
-					return err
-				}
-
-				reader = bytes.NewBuffer(
-					append(bytesBefore, data[0:n]...),
-				)
-
-				return autoReRead(fn)
-			}
-
+		for {
 			if state.state == STATE_WAIT_SIZE {
 				autoReRead(func() error {
 					return binary.Read(reader, binary.LittleEndian, &state.sizeLeft)
 				})
+				fmt.Printf("Got message size: %d\n", state.sizeLeft)
 				state.state = STATE_WAIT_VALUE
 			} else if state.state == STATE_WAIT_VALUE {
 				autoReRead(func() error {
-					if reader.Len() < state.sizeLeft {
+					if reader.Len() < int(state.sizeLeft) {
 						return eobError
 					}
 					return nil
 				})
-				readData := reader.Next(state.sizeLeft)
+				readData := reader.Next(int(state.sizeLeft))
+				fmt.Printf("Got message: %v\n", readData)
+				state.state = STATE_WAIT_SIZE
 				c.messages <- Message{readData}
 			}
 		}
