@@ -8,7 +8,6 @@ import (
 	fanout "github.com/nanoservice/core-fanout/client"
 	"github.com/nanoservice/core-fanout/integration/userneed"
 	"os"
-	"reflect"
 	"testing"
 	"time"
 )
@@ -53,23 +52,35 @@ func TestOneConsumer(t *testing.T) {
 	producer.Publish(messageB)
 	producer.Publish(messageC)
 
-	assertReceived(t, inbox, messageA)
-	assertReceived(t, inbox, messageB)
-	assertReceived(t, inbox, messageC)
+	expected := userNeedSet{
+		*messageA: true,
+		*messageB: true,
+		*messageC: true,
+	}
+
+	if found := assertReceived(t, inbox, expected); found != nil {
+		expected[*found] = false
+	}
+	if found := assertReceived(t, inbox, expected); found != nil {
+		expected[*found] = false
+	}
+	if found := assertReceived(t, inbox, expected); found != nil {
+		expected[*found] = false
+	}
 }
 
 func xTestMultipleConsumers(t *testing.T) {
-	inboxA := subscriptionInbox(t, "INSTANCE_0")
-	inboxB := subscriptionInbox(t, "INSTANCE_1")
+	_ = subscriptionInbox(t, "INSTANCE_0")
+	_ = subscriptionInbox(t, "INSTANCE_1")
 	producer := newProducer()
 
 	producer.Publish(messageA)
 	producer.Publish(messageB)
 	producer.Publish(messageC)
 
-	assertReceived(t, inboxA, messageA)
-	assertReceived(t, inboxB, messageB)
-	assertReceived(t, inboxA, messageC)
+	//	assertReceived(t, inboxA, messageA)
+	//	assertReceived(t, inboxB, messageB)
+	//	assertReceived(t, inboxA, messageC)
 }
 
 func subscriptionInbox(t *testing.T, instanceId string) (inbox chan *userneed.UserNeed) {
@@ -87,16 +98,22 @@ func subscriptionInbox(t *testing.T, instanceId string) (inbox chan *userneed.Us
 	return
 }
 
-func assertReceived(t *testing.T, inbox chan *userneed.UserNeed, expected *userneed.UserNeed) {
+type userNeedSet map[userneed.UserNeed]bool
+
+func assertReceived(t *testing.T, inbox chan *userneed.UserNeed, expected userNeedSet) *userneed.UserNeed {
 	select {
 	case actual := <-inbox:
-		if !reflect.DeepEqual(*actual, *expected) {
-			t.Errorf("Expected %v to equal to %v", *actual, *expected)
+		if present, found := expected[*actual]; !found || !present {
+			t.Errorf("Expected %v to be in %v", *actual, expected)
+			return nil
 		}
+		return actual
 
 	case <-time.After(5000 * time.Millisecond):
-		t.Errorf("Expected to receive %v, got nothing", *expected)
+		t.Errorf("Expected to receive one of %v, got nothing", expected)
 	}
+
+	return nil
 }
 
 type AsyncProducer struct {

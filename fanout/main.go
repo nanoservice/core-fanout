@@ -7,6 +7,7 @@ import (
 	kafka "github.com/Shopify/sarama"
 	"net"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -14,7 +15,10 @@ type Message struct {
 	value []byte
 }
 
-type clientInbox chan Message
+type clientInbox struct {
+	inbox chan Message
+	mux   sync.Mutex
+}
 
 var (
 	clients = make(map[string]clientInbox)
@@ -44,7 +48,8 @@ func main() {
 	go func() {
 		for message := range consumer.Messages() {
 			for _, v := range clients {
-				v <- Message{message.Value}
+				fmt.Printf("Got message: %v\n", message)
+				v.inbox <- Message{message.Value}
 			}
 		}
 	}()
@@ -133,11 +138,15 @@ func handleClient(conn net.Conn) {
 	})
 
 	inbox := make(chan Message, CHANNEL_BUFFER_SIZE)
-	clients[instanceId] = inbox
+	client := clientInbox{
+		inbox: inbox,
+	}
+	clients[instanceId] = client
 
 	for {
 		for message := range inbox {
-			go func() {
+			// FIXME: should be `go func`
+			func() {
 				buf := new(bytes.Buffer)
 
 				var size int32 = int32(len(message.value))
@@ -153,11 +162,13 @@ func handleClient(conn net.Conn) {
 					return
 				}
 
+				client.mux.Lock()
 				_, err = buf.WriteTo(conn)
 				if err != nil {
 					fmt.Printf("Unable to write to client connection: %v\n", err)
 					return
 				}
+				client.mux.Unlock()
 			}()
 		}
 	}
