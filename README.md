@@ -8,9 +8,21 @@ Listens to specific topic on Bus and fans out messages to clients in round-robin
 
 Enables canary deployment.
 
+It uses Apache Kafka as a Bus.
+
 ### Usage
 
-TODO
+    # Run fanout daemon on topic `user_need` and link to one `kafka` instance
+    docker run -d --link kafka:kafka \
+      nanoservice/fanout --id service_x --topic user_need
+
+    # Run fanout daemon with `kafka` cluster
+    docker run -d --link kafka_1:kafka_1 --link kafka_2:kafka_2 --link kafka_3:kafka_3 \
+      nanoservice/fanout --id service_x --topic user_need
+
+To run fanout cluster, just start multiple fanout instances with the same `--id service_x`.
+
+Make sure that both `user_need` and `fanout_service_x_user_need` topics exist or topic auto-creation is enabled in kafka.
 
 ## go fanout client
 
@@ -25,7 +37,9 @@ TODO
 ## Development
 
 * `bin/deps` to install all dependencies
-* `bin/test` to run all tests
+* `bin/test` to run all unit tests
+* `bin/integration` to run all unit+integration tests
+* `bin/protobufs` to re-generate protobufs
 
 Use normal TDD development style.
 

@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+message Heartbeat {
+  string id = 1;
+  string topic = 2;
+}
+
+message Subscribe {
+  string id = 1;
+}
