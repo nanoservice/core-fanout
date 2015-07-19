@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"fmt"
 	kafka "github.com/Shopify/sarama"
 	"github.com/golang/protobuf/proto"
 	fanout "github.com/nanoservice/core-fanout/client"
@@ -88,6 +89,7 @@ func subscriptionInbox(t *testing.T, instanceId string) (inbox chan *userneed.Us
 
 	newConsumer(instanceId).Subscribe(func(raw fanout.Message) {
 		message := &userneed.UserNeed{}
+		fmt.Printf("Got raw message: %v\n", raw.Value)
 		err := proto.Unmarshal(raw.Value, message)
 		if err != nil {
 			t.Errorf("Unmarshal error: %v", err)
