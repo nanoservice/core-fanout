@@ -12,6 +12,7 @@ It has these top-level messages:
 	Heartbeat
 	Subscribe
 	Message
+	MessageAck
 */
 package messages
 
@@ -46,3 +47,12 @@ type Message struct {
 func (m *Message) Reset()         { *m = Message{} }
 func (m *Message) String() string { return proto.CompactTextString(m) }
 func (*Message) ProtoMessage()    {}
+
+type MessageAck struct {
+	Partition int32 `protobuf:"varint,1,opt,name=partition" json:"partition,omitempty"`
+	Offset    int64 `protobuf:"varint,2,opt,name=offset" json:"offset,omitempty"`
+}
+
+func (m *MessageAck) Reset()         { *m = MessageAck{} }
+func (m *MessageAck) String() string { return proto.CompactTextString(m) }
+func (*MessageAck) ProtoMessage()    {}

@@ -13,6 +13,7 @@ type Consumer struct {
 	fanouts    []string
 	instanceId string
 	messages   chan messages.Message
+	SendAcks   bool
 }
 
 type listenState struct {
@@ -31,6 +32,7 @@ func NewConsumer(fanouts []string, instanceId string) (Consumer, error) {
 		fanouts:    fanouts,
 		instanceId: instanceId,
 		messages:   make(chan messages.Message, CHANNEL_BUFFER_SIZE),
+		SendAcks:   true,
 	}
 
 	return consumer, consumer.listen()
@@ -87,6 +89,25 @@ func (c Consumer) listen() error {
 				if err != nil {
 					fmt.Printf("Unable to unmarshal message: %v\n", err)
 					continue
+				}
+
+				if c.SendAcks {
+					ack := &messages.MessageAck{
+						Partition: message.Partition,
+						Offset:    message.Offset,
+					}
+
+					rawAck, err := proto.Marshal(ack)
+					if err != nil {
+						fmt.Printf("Unable to marshal message ack: %v\n", err)
+						continue
+					}
+
+					_, err = conn.Write(rawAck)
+					if err != nil {
+						fmt.Printf("Unable to send message ack: %v\n", err)
+						continue
+					}
 				}
 
 				c.messages <- message

@@ -32,6 +32,7 @@ var (
 		mux:     &sync.Mutex{},
 	}
 	blackHole = clientInbox{make(chan messages.Message)}
+	acks      = make(map[messages.MessageAck]chan bool)
 )
 
 var (
@@ -62,6 +63,10 @@ func main() {
 	go func() {
 		for message := range blackHole.inbox {
 			fmt.Printf("Got message in blackhole: %v\n", message)
+			go func() {
+				<-time.After(5 * time.Millisecond)
+				nextRoundRobinClient().inbox <- message
+			}()
 		}
 	}()
 
@@ -179,6 +184,11 @@ func handleClient(conn net.Conn) {
 	}
 	addClient(instanceId, client)
 
+	go func() {
+		for {
+		}
+	}()
+
 	for {
 		for message := range inbox {
 			go func(message messages.Message) {
@@ -208,6 +218,21 @@ func handleClient(conn net.Conn) {
 					fmt.Printf("Unable to write to client connection: %v\n", err)
 					return
 				}
+
+				expectedAck := messages.MessageAck{
+					Partition: message.Partition,
+					Offset:    message.Offset,
+				}
+				acks[expectedAck] = make(chan bool)
+
+				go func() {
+					select {
+					case _ = <-acks[expectedAck]:
+						return
+					case <-time.After(50 * time.Millisecond):
+						blackHole.inbox <- message
+					}
+				}()
 			}(message)
 		}
 	}

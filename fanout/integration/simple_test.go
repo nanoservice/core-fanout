@@ -85,6 +85,32 @@ func TestMultipleConsumers(t *testing.T) {
 	assertReceived(t, inboxA, expected)
 }
 
+func TestDeadConsumer(t *testing.T) {
+	deadSubscriptionInbox(t, "INSTANCE_0")
+	inbox := subscriptionInbox(t, "INSTANCE_1")
+	producer := newProducer()
+
+	producer.Publish(messageA)
+	producer.Publish(messageB)
+	producer.Publish(messageC)
+
+	expected := userNeedSet{
+		*messageA: true,
+		*messageB: true,
+		*messageC: true,
+	}
+
+	assertReceived(t, inbox, expected)
+	assertReceived(t, inbox, expected)
+	assertReceived(t, inbox, expected)
+}
+
+func deadSubscriptionInbox(t *testing.T, instanceId string) {
+	consumer := newConsumer(instanceId)
+	consumer.SendAcks = false
+	consumer.Subscribe(func(raw messages.Message) {})
+}
+
 func subscriptionInbox(t *testing.T, instanceId string) (inbox chan *userneed.UserNeed) {
 	inbox = make(chan *userneed.UserNeed)
 
