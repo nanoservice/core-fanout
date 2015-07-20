@@ -4,5 +4,6 @@ compile() {
   (cd $1 && docker run -it --rm -v $PWD:/user-src:rw -u $(id -u):$(id -g) -w /user-src nanoservice/protobuf-go --go_out=. *.proto)
 }
 
+cd fanout
 compile messages
 compile integration/userneed

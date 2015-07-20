@@ -2,8 +2,8 @@ FROM nanoservice/go
 
 MAINTAINER Oleksii Fedorov <waterlink000@gmail.com>
 
-ADD . /go/src/github.com/nanoservice/core-fanout
-WORKDIR /go/src/github.com/nanoservice/core-fanout/fanout
+ADD . /go/src/github.com/nanoservice/core-fanout/fanout
+WORKDIR /go/src/github.com/nanoservice/core-fanout/fanout/fanout
 
 RUN go get -d
 RUN go test
