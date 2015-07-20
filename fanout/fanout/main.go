@@ -7,6 +7,7 @@ import (
 	kafka "github.com/Shopify/sarama"
 	"net"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -18,8 +19,20 @@ type clientInbox struct {
 	inbox chan Message
 }
 
+type roundRobinT struct {
+	clients []clientInbox
+	next    int
+	mux     *sync.Mutex
+}
+
 var (
-	clients = make(map[string]clientInbox)
+	clients    = make(map[string]clientInbox)
+	roundRobin = roundRobinT{
+		clients: make([]clientInbox, 0),
+		next:    0,
+		mux:     &sync.Mutex{},
+	}
+	blackHole = clientInbox{make(chan Message)}
 )
 
 var (
@@ -41,14 +54,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	consumer := newConsumer()
+	_, consumers := newConsumer()
+
+	for _, consumer := range consumers {
+		go handleConsumer(consumer)
+	}
 
 	go func() {
-		for message := range consumer.Messages() {
-			for _, v := range clients {
-				fmt.Printf("Got message: %v\n", message)
-				v.inbox <- Message{message.Value}
-			}
+		for message := range blackHole.inbox {
+			fmt.Printf("Got message in blackhole: %v\n", message)
 		}
 	}()
 
@@ -63,18 +77,40 @@ func main() {
 	}
 }
 
-func newConsumer() (consumer kafka.PartitionConsumer) {
+func handleConsumer(consumer kafka.PartitionConsumer) {
+	for message := range consumer.Messages() {
+		fmt.Printf("Got message: %v\n", message)
+		nextRoundRobinClient().inbox <- Message{message.Value}
+	}
+}
+
+func newConsumer() (masterConsumer kafka.Consumer, consumers []kafka.PartitionConsumer) {
+	topic := "test_topic"
 	config := kafka.NewConfig()
+	consumers = make([]kafka.PartitionConsumer, 0)
 
 	retry(func() (err error) {
-		var masterConsumer kafka.Consumer
+		var consumer kafka.PartitionConsumer
+		var partitions []int32
 
 		masterConsumer, err = kafka.NewConsumer(kafkas, config)
 		if err != nil {
 			return
 		}
 
-		consumer, err = masterConsumer.ConsumePartition("test_topic", 0, kafka.OffsetNewest)
+		partitions, err = masterConsumer.Partitions(topic)
+		if err != nil {
+			return
+		}
+
+		for _, partition := range partitions {
+			consumer, err = masterConsumer.ConsumePartition(topic, partition, kafka.OffsetNewest)
+			if err != nil {
+				return
+			}
+
+			consumers = append(consumers, consumer)
+		}
 		return
 	})
 
@@ -96,6 +132,28 @@ func retryCustom(times int, interval time.Duration, fn func() error) (err error)
 	return
 }
 
+func addClient(instanceId string, client clientInbox) {
+	roundRobin.mux.Lock()
+	clients[instanceId] = client
+	roundRobin.clients = make([]clientInbox, 0)
+	for _, v := range clients {
+		roundRobin.clients = append(roundRobin.clients, v)
+	}
+	roundRobin.mux.Unlock()
+}
+
+func nextRoundRobinClient() (client clientInbox) {
+	if len(roundRobin.clients) == 0 {
+		return blackHole
+	}
+
+	roundRobin.mux.Lock()
+	client = roundRobin.clients[roundRobin.next%len(roundRobin.clients)]
+	roundRobin.next = (roundRobin.next + 1) % len(roundRobin.clients)
+	roundRobin.mux.Unlock()
+	return
+}
+
 func handleClient(conn net.Conn) {
 	defer conn.Close()
 	var autoReRead func(fn func() error) error
@@ -113,12 +171,16 @@ func handleClient(conn net.Conn) {
 	autoReRead = func(fn func() error) error {
 		bytesBefore := reader.Bytes()
 
-		if fn() == nil {
+		err := fn()
+		if err == nil {
 			return nil
 		}
 
-		n, err := conn.Read(data)
+		fmt.Printf("Re-reading, cause: %v\n", err)
+
+		n, err = conn.Read(data)
 		if err != nil {
+			fmt.Printf("Unable to read, cause: %v\n", err)
 			return err
 		}
 
@@ -139,7 +201,7 @@ func handleClient(conn net.Conn) {
 	client := clientInbox{
 		inbox: inbox,
 	}
-	clients[instanceId] = client
+	addClient(instanceId, client)
 
 	for {
 		for message := range inbox {

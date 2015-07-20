@@ -59,29 +59,29 @@ func TestOneConsumer(t *testing.T) {
 		*messageC: true,
 	}
 
-	if found := assertReceived(t, inbox, expected); found != nil {
-		expected[*found] = false
-	}
-	if found := assertReceived(t, inbox, expected); found != nil {
-		expected[*found] = false
-	}
-	if found := assertReceived(t, inbox, expected); found != nil {
-		expected[*found] = false
-	}
+	assertReceived(t, inbox, expected)
+	assertReceived(t, inbox, expected)
+	assertReceived(t, inbox, expected)
 }
 
-func xTestMultipleConsumers(t *testing.T) {
-	_ = subscriptionInbox(t, "INSTANCE_0")
-	_ = subscriptionInbox(t, "INSTANCE_1")
+func TestMultipleConsumers(t *testing.T) {
+	inboxA := subscriptionInbox(t, "INSTANCE_0")
+	inboxB := subscriptionInbox(t, "INSTANCE_1")
 	producer := newProducer()
 
 	producer.Publish(messageA)
 	producer.Publish(messageB)
 	producer.Publish(messageC)
 
-	//	assertReceived(t, inboxA, messageA)
-	//	assertReceived(t, inboxB, messageB)
-	//	assertReceived(t, inboxA, messageC)
+	expected := userNeedSet{
+		*messageA: true,
+		*messageB: true,
+		*messageC: true,
+	}
+
+	assertReceived(t, inboxA, expected)
+	assertReceived(t, inboxB, expected)
+	assertReceived(t, inboxA, expected)
 }
 
 func subscriptionInbox(t *testing.T, instanceId string) (inbox chan *userneed.UserNeed) {
@@ -109,6 +109,7 @@ func assertReceived(t *testing.T, inbox chan *userneed.UserNeed, expected userNe
 			t.Errorf("Expected %v to be in %v", *actual, expected)
 			return nil
 		}
+		expected[*actual] = false
 		return actual
 
 	case <-time.After(5000 * time.Millisecond):

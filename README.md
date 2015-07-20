@@ -47,6 +47,7 @@ After that you can run `bin/integration` to verify it works
 * `bin/test` to run all unit tests
 * `bin/integration` to run all unit+integration tests
 * `bin/protobufs` to re-generate protobufs
+* `bin/compose` to run `docker-compose` commands with right `docker-compose.yml` file
 
 Use normal TDD development style.
 
