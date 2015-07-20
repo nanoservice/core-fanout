@@ -15,7 +15,7 @@ kafka:
     - "/var/run/docker.sock:/var/run/docker.sock"
 
 fanout:
-  build: "."
+  build: "./fanout"
   dockerfile: "./Dockerfile"
   ports:
     - "4987"
@@ -24,7 +24,7 @@ fanout:
   command: "--id test_service --topic test_topic"
 
 integration:
-  build: "."
+  build: "./fanout"
   dockerfile: "./integration/Dockerfile"
   links:
     - "kafka:kafka"
