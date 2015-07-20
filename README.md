@@ -36,6 +36,13 @@ TODO
 
 ## Development
 
+To setup integration tests:
+
+* If you use docker-machine + virtualbox, run this: `ln -s .virtualbox .fanout`
+* If you docker directly, run this: `ln -s .docker .fanout`
+
+After that you can run `bin/integration` to verify it works
+
 * `bin/deps` to install all dependencies
 * `bin/test` to run all unit tests
 * `bin/integration` to run all unit+integration tests

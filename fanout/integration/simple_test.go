@@ -161,7 +161,9 @@ func retryCustom(times int, interval time.Duration, fn func() error) (err error)
 		if err == nil {
 			return
 		}
+		fmt.Printf("Got error: %v, retrying..\n", err)
 		time.Sleep(interval)
 	}
+	fmt.Println("Gave up :(")
 	return
 }
