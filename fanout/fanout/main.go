@@ -17,7 +17,7 @@ type Message struct {
 
 type clientInbox struct {
 	inbox chan Message
-	mux   sync.Mutex
+	mux   *sync.Mutex
 }
 
 var (
@@ -140,13 +140,13 @@ func handleClient(conn net.Conn) {
 	inbox := make(chan Message, CHANNEL_BUFFER_SIZE)
 	client := clientInbox{
 		inbox: inbox,
+		mux:   &sync.Mutex{},
 	}
 	clients[instanceId] = client
 
 	for {
 		for message := range inbox {
-			// FIXME: should be `go func`
-			func() {
+			go func(message Message) {
 				buf := new(bytes.Buffer)
 
 				var size int32 = int32(len(message.value))
@@ -162,14 +162,13 @@ func handleClient(conn net.Conn) {
 					return
 				}
 
-				client.mux.Lock()
+				fmt.Printf("Gonna send message: %v\n", buf.Bytes())
 				_, err = buf.WriteTo(conn)
 				if err != nil {
 					fmt.Printf("Unable to write to client connection: %v\n", err)
 					return
 				}
-				client.mux.Unlock()
-			}()
+			}(message)
 		}
 	}
 }
