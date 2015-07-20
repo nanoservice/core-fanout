@@ -1,10 +1,9 @@
 package fanout
 
 import (
-	"bytes"
 	"encoding/binary"
-	"errors"
 	"fmt"
+	"github.com/nanoservice/core-fanout/fanout/comm"
 	"net"
 )
 
@@ -58,67 +57,30 @@ func (c Consumer) listen() error {
 
 	go func() {
 		defer conn.Close()
-		var autoReRead func(fn func() error) error
 
-		data := make([]byte, 4096)
-		state := listenState{STATE_WAIT_SIZE, 0}
-
-		fmt.Printf("Trying to read from socket")
-
-		n, err := conn.Read(data)
+		stream, err := comm.NewStream(conn)
 		if err != nil {
-			fmt.Printf("error: %v\n", err)
+			fmt.Printf("Unable to obtain stream: %v\n", err)
 			return
 		}
 
-		fmt.Printf("Read %d bytes from socket\n", n)
-
-		reader := bytes.NewBuffer(data[0:n])
-
-		eobError := errors.New("short buffer")
-		autoReRead = func(fn func() error) error {
-			bytesBefore := reader.Bytes()
-
-			err := fn()
-
-			if err == nil {
-				return nil
-			}
-
-			fmt.Printf("autoReRead: err was %v\n", err)
-
-			fmt.Printf("Trying to read from socket")
-
-			n, err := conn.Read(data)
-			if err != nil {
-				fmt.Printf("error: %v\n", err)
-				return err
-			}
-
-			fmt.Printf("Read %d bytes from socket\n", n)
-
-			reader = bytes.NewBuffer(
-				append(bytesBefore, data[0:n]...),
-			)
-
-			return autoReRead(fn)
-		}
+		state := listenState{STATE_WAIT_SIZE, 0}
 
 		for {
 			if state.state == STATE_WAIT_SIZE {
-				autoReRead(func() error {
-					return binary.Read(reader, binary.LittleEndian, &state.sizeLeft)
+				stream.ReadWith(func() error {
+					return binary.Read(stream.Reader, binary.LittleEndian, &state.sizeLeft)
 				})
 				fmt.Printf("Got message size: %d\n", state.sizeLeft)
 				state.state = STATE_WAIT_VALUE
 			} else if state.state == STATE_WAIT_VALUE {
-				autoReRead(func() error {
-					if reader.Len() < int(state.sizeLeft) {
-						return eobError
+				stream.ReadWith(func() error {
+					if stream.Reader.Len() < int(state.sizeLeft) {
+						return comm.EOFError
 					}
 					return nil
 				})
-				readData := reader.Next(int(state.sizeLeft))
+				readData := stream.Reader.Next(int(state.sizeLeft))
 				fmt.Printf("Got message: %v\n", readData)
 				state.state = STATE_WAIT_SIZE
 				c.messages <- Message{readData}

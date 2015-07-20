@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	kafka "github.com/Shopify/sarama"
+	"github.com/nanoservice/core-fanout/fanout/comm"
 	"net"
 	"os"
 	"sync"
@@ -156,43 +157,16 @@ func nextRoundRobinClient() (client clientInbox) {
 
 func handleClient(conn net.Conn) {
 	defer conn.Close()
-	var autoReRead func(fn func() error) error
 	var instanceId string
 
-	data := make([]byte, 4096)
-
-	n, err := conn.Read(data)
+	stream, err := comm.NewStream(conn)
 	if err != nil {
+		fmt.Printf("Unable to create stream: %v\n", err)
 		return
 	}
 
-	reader := bytes.NewBuffer(data[0:n])
-
-	autoReRead = func(fn func() error) error {
-		bytesBefore := reader.Bytes()
-
-		err := fn()
-		if err == nil {
-			return nil
-		}
-
-		fmt.Printf("Re-reading, cause: %v\n", err)
-
-		n, err = conn.Read(data)
-		if err != nil {
-			fmt.Printf("Unable to read, cause: %v\n", err)
-			return err
-		}
-
-		reader = bytes.NewBuffer(
-			append(bytesBefore, data[0:n]...),
-		)
-
-		return autoReRead(fn)
-	}
-
-	autoReRead(func() (err error) {
-		instanceId, err = reader.ReadString(byte('\n'))
+	stream.ReadWith(func() (err error) {
+		instanceId, err = stream.Reader.ReadString(byte('\n'))
 		fmt.Printf("got client: %s\n", instanceId)
 		return
 	})
