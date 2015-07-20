@@ -9,13 +9,12 @@ kafka:
     - "9092"
   links:
     - "zookeeper:zk"
-  environment:
-    KAFKA_ADVERTISED_HOST_NAME: "172.17.42.1"
+  env_file: kafka.env
   volumes:
     - "/var/run/docker.sock:/var/run/docker.sock"
 
 fanout:
-  build: "./fanout"
+  build: "../fanout"
   dockerfile: "./Dockerfile"
   ports:
     - "4987"
@@ -24,7 +23,7 @@ fanout:
   command: "--id test_service --topic test_topic"
 
 integration:
-  build: "./fanout"
+  build: "../fanout"
   dockerfile: "./integration/Dockerfile"
   links:
     - "kafka:kafka"
