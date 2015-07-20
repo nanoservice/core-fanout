@@ -7,7 +7,6 @@ import (
 	kafka "github.com/Shopify/sarama"
 	"net"
 	"os"
-	"sync"
 	"time"
 )
 
@@ -17,7 +16,6 @@ type Message struct {
 
 type clientInbox struct {
 	inbox chan Message
-	mux   *sync.Mutex
 }
 
 var (
@@ -140,7 +138,6 @@ func handleClient(conn net.Conn) {
 	inbox := make(chan Message, CHANNEL_BUFFER_SIZE)
 	client := clientInbox{
 		inbox: inbox,
-		mux:   &sync.Mutex{},
 	}
 	clients[instanceId] = client
 
