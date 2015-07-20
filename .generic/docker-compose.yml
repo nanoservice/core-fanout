@@ -10,6 +10,8 @@ kafka:
   links:
     - "zookeeper:zk"
   env_file: kafka.env
+  environment:
+    KAFKA_NUM_PARTITIONS: 3
   volumes:
     - "/var/run/docker.sock:/var/run/docker.sock"
 

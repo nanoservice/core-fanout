@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+docker-compose -f .fanout/docker-compose.yml $*

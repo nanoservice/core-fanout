@@ -18,8 +18,17 @@ type clientInbox struct {
 	inbox chan Message
 }
 
+type roundRobinT struct {
+	clients []clientInbox
+	next    int
+}
+
 var (
-	clients = make(map[string]clientInbox)
+	clients    = make(map[string]clientInbox)
+	roundRobin = roundRobinT{
+		clients: make([]clientInbox, 0),
+		next:    0,
+	}
 )
 
 var (
@@ -45,10 +54,8 @@ func main() {
 
 	go func() {
 		for message := range consumer.Messages() {
-			for _, v := range clients {
-				fmt.Printf("Got message: %v\n", message)
-				v.inbox <- Message{message.Value}
-			}
+			fmt.Printf("Got message: %v\n", message)
+			nextRoundRobinClient().inbox <- Message{message.Value}
 		}
 	}()
 
@@ -96,6 +103,20 @@ func retryCustom(times int, interval time.Duration, fn func() error) (err error)
 	return
 }
 
+func addClient(instanceId string, client clientInbox) {
+	clients[instanceId] = client
+	roundRobin.clients = make([]clientInbox, 0)
+	for _, v := range clients {
+		roundRobin.clients = append(roundRobin.clients, v)
+	}
+}
+
+func nextRoundRobinClient() (client clientInbox) {
+	client = roundRobin.clients[roundRobin.next]
+	roundRobin.next = (roundRobin.next + 1) % len(roundRobin.clients)
+	return
+}
+
 func handleClient(conn net.Conn) {
 	defer conn.Close()
 	var autoReRead func(fn func() error) error
@@ -139,7 +160,7 @@ func handleClient(conn net.Conn) {
 	client := clientInbox{
 		inbox: inbox,
 	}
-	clients[instanceId] = client
+	addClient(instanceId, client)
 
 	for {
 		for message := range inbox {
