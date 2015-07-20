@@ -3,18 +3,16 @@ package fanout
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/golang/protobuf/proto"
 	"github.com/nanoservice/core-fanout/fanout/comm"
+	"github.com/nanoservice/core-fanout/fanout/messages"
 	"net"
 )
-
-type Message struct {
-	Value []byte
-}
 
 type Consumer struct {
 	fanouts    []string
 	instanceId string
-	messages   chan Message
+	messages   chan messages.Message
 }
 
 type listenState struct {
@@ -32,13 +30,13 @@ func NewConsumer(fanouts []string, instanceId string) (Consumer, error) {
 	consumer := Consumer{
 		fanouts:    fanouts,
 		instanceId: instanceId,
-		messages:   make(chan Message, CHANNEL_BUFFER_SIZE),
+		messages:   make(chan messages.Message, CHANNEL_BUFFER_SIZE),
 	}
 
 	return consumer, consumer.listen()
 }
 
-func (c Consumer) Subscribe(fn func(raw Message)) {
+func (c Consumer) Subscribe(fn func(raw messages.Message)) {
 	go func() {
 		for message := range c.messages {
 			fn(message)
@@ -83,7 +81,15 @@ func (c Consumer) listen() error {
 				readData := stream.Reader.Next(int(state.sizeLeft))
 				fmt.Printf("Got message: %v\n", readData)
 				state.state = STATE_WAIT_SIZE
-				c.messages <- Message{readData}
+
+				var message messages.Message
+				err := proto.Unmarshal(readData, &message)
+				if err != nil {
+					fmt.Printf("Unable to unmarshal message: %v\n", err)
+					continue
+				}
+
+				c.messages <- message
 			}
 		}
 	}()

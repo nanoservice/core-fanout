@@ -8,6 +8,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	fanout "github.com/nanoservice/core-fanout/fanout/client"
 	"github.com/nanoservice/core-fanout/fanout/integration/userneed"
+	"github.com/nanoservice/core-fanout/fanout/messages"
 	"os"
 	"testing"
 	"time"
@@ -87,9 +88,9 @@ func TestMultipleConsumers(t *testing.T) {
 func subscriptionInbox(t *testing.T, instanceId string) (inbox chan *userneed.UserNeed) {
 	inbox = make(chan *userneed.UserNeed)
 
-	newConsumer(instanceId).Subscribe(func(raw fanout.Message) {
+	newConsumer(instanceId).Subscribe(func(raw messages.Message) {
 		message := &userneed.UserNeed{}
-		fmt.Printf("Got raw message: %v\n", raw.Value)
+		fmt.Printf("Got raw message: %v with id=%d:%d\n", raw.Value, raw.Partition, raw.Offset)
 		err := proto.Unmarshal(raw.Value, message)
 		if err != nil {
 			t.Errorf("Unmarshal error: %v", err)

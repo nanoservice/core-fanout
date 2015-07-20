@@ -5,19 +5,17 @@ import (
 	"encoding/binary"
 	"fmt"
 	kafka "github.com/Shopify/sarama"
+	"github.com/golang/protobuf/proto"
 	"github.com/nanoservice/core-fanout/fanout/comm"
+	"github.com/nanoservice/core-fanout/fanout/messages"
 	"net"
 	"os"
 	"sync"
 	"time"
 )
 
-type Message struct {
-	value []byte
-}
-
 type clientInbox struct {
-	inbox chan Message
+	inbox chan messages.Message
 }
 
 type roundRobinT struct {
@@ -33,7 +31,7 @@ var (
 		next:    0,
 		mux:     &sync.Mutex{},
 	}
-	blackHole = clientInbox{make(chan Message)}
+	blackHole = clientInbox{make(chan messages.Message)}
 )
 
 var (
@@ -81,7 +79,11 @@ func main() {
 func handleConsumer(consumer kafka.PartitionConsumer) {
 	for message := range consumer.Messages() {
 		fmt.Printf("Got message: %v\n", message)
-		nextRoundRobinClient().inbox <- Message{message.Value}
+		nextRoundRobinClient().inbox <- messages.Message{
+			Value:     message.Value,
+			Partition: message.Partition,
+			Offset:    message.Offset,
+		}
 	}
 }
 
@@ -171,7 +173,7 @@ func handleClient(conn net.Conn) {
 		return
 	})
 
-	inbox := make(chan Message, CHANNEL_BUFFER_SIZE)
+	inbox := make(chan messages.Message, CHANNEL_BUFFER_SIZE)
 	client := clientInbox{
 		inbox: inbox,
 	}
@@ -179,17 +181,22 @@ func handleClient(conn net.Conn) {
 
 	for {
 		for message := range inbox {
-			go func(message Message) {
+			go func(message messages.Message) {
 				buf := new(bytes.Buffer)
+				rawMessage, err := proto.Marshal(&message)
+				if err != nil {
+					fmt.Printf("Unable to marshal message: %v\n", err)
+					return
+				}
 
-				var size int32 = int32(len(message.value))
-				err := binary.Write(buf, binary.LittleEndian, size)
+				var size int32 = int32(len(rawMessage))
+				err = binary.Write(buf, binary.LittleEndian, size)
 				if err != nil {
 					fmt.Printf("Unable to dump message size to buffer: %v\n", err)
 					return
 				}
 
-				_, err = buf.Write(message.value)
+				_, err = buf.Write(rawMessage)
 				if err != nil {
 					fmt.Printf("Unable to dump raw message to buffer: %v\n", err)
 					return
