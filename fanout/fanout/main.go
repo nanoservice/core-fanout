@@ -5,18 +5,18 @@ import (
 	"encoding/binary"
 	"fmt"
 	kafka "github.com/Shopify/sarama"
+	"github.com/golang/protobuf/proto"
+	"github.com/nanoservice/core-fanout/fanout/comm"
+	"github.com/nanoservice/core-fanout/fanout/messages"
 	"net"
 	"os"
 	"sync"
 	"time"
 )
 
-type Message struct {
-	value []byte
-}
-
 type clientInbox struct {
-	inbox chan Message
+	inbox chan messages.Message
+	count int
 }
 
 type roundRobinT struct {
@@ -32,7 +32,8 @@ var (
 		next:    0,
 		mux:     &sync.Mutex{},
 	}
-	blackHole = clientInbox{make(chan Message)}
+	blackHole = clientInbox{make(chan messages.Message), 1}
+	acks      = make(map[messages.MessageAck]chan bool)
 )
 
 var (
@@ -63,6 +64,10 @@ func main() {
 	go func() {
 		for message := range blackHole.inbox {
 			fmt.Printf("Got message in blackhole: %v\n", message)
+			go func(message messages.Message) {
+				fmt.Printf("Gonna re-send message from blackhole: %v\n", message)
+				nextRoundRobinClient().inbox <- message
+			}(message)
 		}
 	}()
 
@@ -80,7 +85,11 @@ func main() {
 func handleConsumer(consumer kafka.PartitionConsumer) {
 	for message := range consumer.Messages() {
 		fmt.Printf("Got message: %v\n", message)
-		nextRoundRobinClient().inbox <- Message{message.Value}
+		nextRoundRobinClient().inbox <- messages.Message{
+			Value:     message.Value,
+			Partition: message.Partition,
+			Offset:    message.Offset,
+		}
 	}
 }
 
@@ -132,12 +141,31 @@ func retryCustom(times int, interval time.Duration, fn func() error) (err error)
 	return
 }
 
-func addClient(instanceId string, client clientInbox) {
-	roundRobin.mux.Lock()
-	clients[instanceId] = client
+func rebuildRoundRobin() {
 	roundRobin.clients = make([]clientInbox, 0)
 	for _, v := range clients {
 		roundRobin.clients = append(roundRobin.clients, v)
+	}
+}
+
+func addClient(instanceId string, client clientInbox) {
+	roundRobin.mux.Lock()
+	if oldClient, found := clients[instanceId]; found {
+		client.count += oldClient.count
+	}
+	clients[instanceId] = client
+	rebuildRoundRobin()
+	roundRobin.mux.Unlock()
+}
+
+func clientDead(instanceId string) {
+	roundRobin.mux.Lock()
+	if client, found := clients[instanceId]; found {
+		client.count -= 1
+		if client.count < 1 {
+			delete(clients, instanceId)
+			rebuildRoundRobin()
+		}
 	}
 	roundRobin.mux.Unlock()
 }
@@ -156,68 +184,95 @@ func nextRoundRobinClient() (client clientInbox) {
 
 func handleClient(conn net.Conn) {
 	defer conn.Close()
-	var autoReRead func(fn func() error) error
 	var instanceId string
 
-	data := make([]byte, 4096)
-
-	n, err := conn.Read(data)
+	stream, err := comm.NewStream(conn)
 	if err != nil {
+		fmt.Printf("Unable to create stream: %v\n", err)
 		return
 	}
 
-	reader := bytes.NewBuffer(data[0:n])
-
-	autoReRead = func(fn func() error) error {
-		bytesBefore := reader.Bytes()
-
-		err := fn()
-		if err == nil {
-			return nil
-		}
-
-		fmt.Printf("Re-reading, cause: %v\n", err)
-
-		n, err = conn.Read(data)
-		if err != nil {
-			fmt.Printf("Unable to read, cause: %v\n", err)
-			return err
-		}
-
-		reader = bytes.NewBuffer(
-			append(bytesBefore, data[0:n]...),
-		)
-
-		return autoReRead(fn)
-	}
-
-	autoReRead(func() (err error) {
-		instanceId, err = reader.ReadString(byte('\n'))
+	stream.ReadWith(func() (err error) {
+		instanceId, err = stream.Reader.ReadString(byte('\n'))
 		fmt.Printf("got client: %s\n", instanceId)
 		return
 	})
 
-	inbox := make(chan Message, CHANNEL_BUFFER_SIZE)
+	inbox := make(chan messages.Message, CHANNEL_BUFFER_SIZE)
 	client := clientInbox{
 		inbox: inbox,
+		count: 1,
 	}
 	addClient(instanceId, client)
 
-	for {
-		for message := range inbox {
-			go func(message Message) {
-				buf := new(bytes.Buffer)
+	ackErrors := make(chan error)
 
-				var size int32 = int32(len(message.value))
-				err := binary.Write(buf, binary.LittleEndian, size)
+	go func() {
+		for {
+			var messageSize int32
+			err := stream.ReadWith(func() error {
+				return binary.Read(stream.Reader, binary.LittleEndian, &messageSize)
+			})
+			if err != nil {
+				ackErrors <- err
+				continue
+			}
+
+			err = stream.ReadWith(func() error {
+				if int32(stream.Reader.Len()) < messageSize {
+					return comm.EOFError
+				}
+				return nil
+			})
+			if err != nil {
+				ackErrors <- err
+				continue
+			}
+
+			rawAck := stream.Reader.Next(int(messageSize))
+			if err != nil {
+				ackErrors <- err
+				continue
+			}
+
+			var ack messages.MessageAck
+			err = proto.Unmarshal(rawAck, &ack)
+			if err != nil {
+				ackErrors <- err
+				continue
+			}
+
+			if _, found := acks[ack]; found {
+				fmt.Printf("Got ack: %v\n", ack)
+				acks[ack] <- true
+			}
+		}
+	}()
+
+	dead := make(chan bool)
+	for {
+		select {
+		case message := <-inbox:
+			go func(message messages.Message, dead chan bool) {
+				buf := new(bytes.Buffer)
+				rawMessage, err := proto.Marshal(&message)
 				if err != nil {
-					fmt.Printf("Unable to dump message size to buffer: %v\n", err)
+					fmt.Printf("Unable to marshal message: %v\n", err)
 					return
 				}
 
-				_, err = buf.Write(message.value)
+				var size int32 = int32(len(rawMessage))
+				err = binary.Write(buf, binary.LittleEndian, size)
+				if err != nil {
+					fmt.Printf("Unable to dump message size to buffer: %v\n", err)
+					dead <- true
+					return
+				}
+
+				_, err = buf.Write(rawMessage)
 				if err != nil {
 					fmt.Printf("Unable to dump raw message to buffer: %v\n", err)
+					dead <- true
 					return
 				}
 
@@ -225,9 +280,31 @@ func handleClient(conn net.Conn) {
 				_, err = buf.WriteTo(conn)
 				if err != nil {
 					fmt.Printf("Unable to write to client connection: %v\n", err)
+					dead <- true
 					return
 				}
-			}(message)
+
+				expectedAck := messages.MessageAck{
+					Partition: message.Partition,
+					Offset:    message.Offset,
+				}
+				acks[expectedAck] = make(chan bool)
+
+				go func() {
+					select {
+					case _ = <-acks[expectedAck]:
+						break
+					case <-time.After(50 * time.Millisecond):
+						blackHole.inbox <- message
+						dead <- true
+					}
+					delete(acks, expectedAck)
+				}()
+			}(message, dead)
+
+		case <-ackErrors:
+		case <-dead:
+			clientDead(instanceId)
 		}
 	}
 }

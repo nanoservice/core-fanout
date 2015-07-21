@@ -8,3 +8,14 @@ message Heartbeat {
 message Subscribe {
   string id = 1;
 }
+
+message Message {
+  int32 partition = 1;
+  int64 offset = 2;
+  bytes value = 3;
+}
+
+message MessageAck {
+  int32 partition = 1;
+  int64 offset = 2;
+}

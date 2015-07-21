@@ -8,6 +8,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	fanout "github.com/nanoservice/core-fanout/fanout/client"
 	"github.com/nanoservice/core-fanout/fanout/integration/userneed"
+	"github.com/nanoservice/core-fanout/fanout/messages"
 	"os"
 	"testing"
 	"time"
@@ -46,6 +47,7 @@ var (
 )
 
 func TestOneConsumer(t *testing.T) {
+	fmt.Printf("===== TestOneConsumer =====")
 	inbox := subscriptionInbox(t, "INSTANCE_0")
 	producer := newProducer()
 
@@ -65,6 +67,7 @@ func TestOneConsumer(t *testing.T) {
 }
 
 func TestMultipleConsumers(t *testing.T) {
+	fmt.Printf("===== TestMultipleConsumers =====")
 	inboxA := subscriptionInbox(t, "INSTANCE_0")
 	inboxB := subscriptionInbox(t, "INSTANCE_1")
 	producer := newProducer()
@@ -84,12 +87,39 @@ func TestMultipleConsumers(t *testing.T) {
 	assertReceived(t, inboxA, expected)
 }
 
+func TestDeadConsumer(t *testing.T) {
+	fmt.Printf("===== TestDeadConsumer =====")
+	deadSubscriptionInbox(t, "INSTANCE_0")
+	inbox := subscriptionInbox(t, "INSTANCE_1")
+	producer := newProducer()
+
+	producer.Publish(messageA)
+	producer.Publish(messageB)
+	producer.Publish(messageC)
+
+	expected := userNeedSet{
+		*messageA: true,
+		*messageB: true,
+		*messageC: true,
+	}
+
+	assertReceived(t, inbox, expected)
+	assertReceived(t, inbox, expected)
+	assertReceived(t, inbox, expected)
+}
+
+func deadSubscriptionInbox(t *testing.T, instanceId string) {
+	consumer := newConsumer(instanceId)
+	consumer.SendAcks = false
+	consumer.Subscribe(func(raw messages.Message) {})
+}
+
 func subscriptionInbox(t *testing.T, instanceId string) (inbox chan *userneed.UserNeed) {
 	inbox = make(chan *userneed.UserNeed)
 
-	newConsumer(instanceId).Subscribe(func(raw fanout.Message) {
+	newConsumer(instanceId).Subscribe(func(raw messages.Message) {
 		message := &userneed.UserNeed{}
-		fmt.Printf("Got raw message: %v\n", raw.Value)
+		fmt.Printf("Got raw message: %v with id=%d:%d\n", raw.Value, raw.Partition, raw.Offset)
 		err := proto.Unmarshal(raw.Value, message)
 		if err != nil {
 			t.Errorf("Unmarshal error: %v", err)
@@ -105,6 +135,7 @@ type userNeedSet map[userneed.UserNeed]bool
 func assertReceived(t *testing.T, inbox chan *userneed.UserNeed, expected userNeedSet) *userneed.UserNeed {
 	select {
 	case actual := <-inbox:
+		fmt.Printf("Got something: %v :)\n", *actual)
 		if present, found := expected[*actual]; !found || !present {
 			t.Errorf("Expected %v to be in %v", *actual, expected)
 			return nil
@@ -112,7 +143,8 @@ func assertReceived(t *testing.T, inbox chan *userneed.UserNeed, expected userNe
 		expected[*actual] = false
 		return actual
 
-	case <-time.After(5000 * time.Millisecond):
+	case <-time.After(1500 * time.Millisecond):
+		fmt.Printf("Timed out :(\n")
 		t.Errorf("Expected to receive one of %v, got nothing", expected)
 	}
 
@@ -144,7 +176,7 @@ func newProducer() AsyncProducer {
 	return AsyncProducer{producer}
 }
 
-func newConsumer(instanceId string) (consumer fanout.Consumer) {
+func newConsumer(instanceId string) (consumer *fanout.Consumer) {
 	_ = retry(func() (err error) {
 		consumer, err = fanout.NewConsumer(fanouts, instanceId)
 		return

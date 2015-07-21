@@ -3,19 +3,18 @@ package fanout
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"fmt"
+	"github.com/golang/protobuf/proto"
+	"github.com/nanoservice/core-fanout/fanout/comm"
+	"github.com/nanoservice/core-fanout/fanout/messages"
 	"net"
 )
-
-type Message struct {
-	Value []byte
-}
 
 type Consumer struct {
 	fanouts    []string
 	instanceId string
-	messages   chan Message
+	messages   chan messages.Message
+	SendAcks   bool
 }
 
 type listenState struct {
@@ -29,17 +28,18 @@ const (
 	CHANNEL_BUFFER_SIZE = 100
 )
 
-func NewConsumer(fanouts []string, instanceId string) (Consumer, error) {
-	consumer := Consumer{
+func NewConsumer(fanouts []string, instanceId string) (*Consumer, error) {
+	consumer := &Consumer{
 		fanouts:    fanouts,
 		instanceId: instanceId,
-		messages:   make(chan Message, CHANNEL_BUFFER_SIZE),
+		messages:   make(chan messages.Message, CHANNEL_BUFFER_SIZE),
+		SendAcks:   true,
 	}
 
 	return consumer, consumer.listen()
 }
 
-func (c Consumer) Subscribe(fn func(raw Message)) {
+func (c *Consumer) Subscribe(fn func(raw messages.Message)) {
 	go func() {
 		for message := range c.messages {
 			fn(message)
@@ -47,7 +47,7 @@ func (c Consumer) Subscribe(fn func(raw Message)) {
 	}()
 }
 
-func (c Consumer) listen() error {
+func (c *Consumer) listen() error {
 	conn, err := net.Dial("tcp", c.fanouts[0])
 	if err != nil {
 		fmt.Println("Unable to connect to fanout :(")
@@ -58,70 +58,78 @@ func (c Consumer) listen() error {
 
 	go func() {
 		defer conn.Close()
-		var autoReRead func(fn func() error) error
 
-		data := make([]byte, 4096)
-		state := listenState{STATE_WAIT_SIZE, 0}
-
-		fmt.Printf("Trying to read from socket")
-
-		n, err := conn.Read(data)
+		stream, err := comm.NewStream(conn)
 		if err != nil {
-			fmt.Printf("error: %v\n", err)
+			fmt.Printf("Unable to obtain stream: %v\n", err)
 			return
 		}
 
-		fmt.Printf("Read %d bytes from socket\n", n)
-
-		reader := bytes.NewBuffer(data[0:n])
-
-		eobError := errors.New("short buffer")
-		autoReRead = func(fn func() error) error {
-			bytesBefore := reader.Bytes()
-
-			err := fn()
-
-			if err == nil {
-				return nil
-			}
-
-			fmt.Printf("autoReRead: err was %v\n", err)
-
-			fmt.Printf("Trying to read from socket")
-
-			n, err := conn.Read(data)
-			if err != nil {
-				fmt.Printf("error: %v\n", err)
-				return err
-			}
-
-			fmt.Printf("Read %d bytes from socket\n", n)
-
-			reader = bytes.NewBuffer(
-				append(bytesBefore, data[0:n]...),
-			)
-
-			return autoReRead(fn)
-		}
+		state := listenState{STATE_WAIT_SIZE, 0}
 
 		for {
 			if state.state == STATE_WAIT_SIZE {
-				autoReRead(func() error {
-					return binary.Read(reader, binary.LittleEndian, &state.sizeLeft)
+				stream.ReadWith(func() error {
+					return binary.Read(stream.Reader, binary.LittleEndian, &state.sizeLeft)
 				})
 				fmt.Printf("Got message size: %d\n", state.sizeLeft)
 				state.state = STATE_WAIT_VALUE
 			} else if state.state == STATE_WAIT_VALUE {
-				autoReRead(func() error {
-					if reader.Len() < int(state.sizeLeft) {
-						return eobError
+				stream.ReadWith(func() error {
+					if stream.Reader.Len() < int(state.sizeLeft) {
+						return comm.EOFError
 					}
 					return nil
 				})
-				readData := reader.Next(int(state.sizeLeft))
+				readData := stream.Reader.Next(int(state.sizeLeft))
 				fmt.Printf("Got message: %v\n", readData)
 				state.state = STATE_WAIT_SIZE
-				c.messages <- Message{readData}
+
+				var message messages.Message
+				err := proto.Unmarshal(readData, &message)
+				if err != nil {
+					fmt.Printf("Unable to unmarshal message: %v\n", err)
+					continue
+				}
+
+				go func(message messages.Message) {
+					if c.SendAcks {
+						buf := new(bytes.Buffer)
+
+						ack := &messages.MessageAck{
+							Partition: message.Partition,
+							Offset:    message.Offset,
+						}
+
+						rawAck, err := proto.Marshal(ack)
+						if err != nil {
+							fmt.Printf("Unable to marshal message ack: %v\n", err)
+							return
+						}
+
+						var size int32 = int32(len(rawAck))
+						err = binary.Write(buf, binary.LittleEndian, size)
+						if err != nil {
+							fmt.Printf("Unable to dump message ack size: %v\n", err)
+							return
+						}
+
+						_, err = buf.Write(rawAck)
+						if err != nil {
+							fmt.Printf("Unable to dump message ack: %v\n", err)
+							return
+						}
+
+						_, err = buf.WriteTo(conn)
+						if err != nil {
+							fmt.Printf("Unable to send message ack: %v\n", err)
+						}
+
+						fmt.Printf("Sent ack from %s: %v\n", c.instanceId, rawAck)
+					}
+				}(message)
+
+				c.messages <- message
 			}
 		}
 	}()
