@@ -47,6 +47,7 @@ var (
 )
 
 func TestOneConsumer(t *testing.T) {
+	fmt.Printf("===== TestOneConsumer =====")
 	inbox := subscriptionInbox(t, "INSTANCE_0")
 	producer := newProducer()
 
@@ -66,6 +67,7 @@ func TestOneConsumer(t *testing.T) {
 }
 
 func TestMultipleConsumers(t *testing.T) {
+	fmt.Printf("===== TestMultipleConsumers =====")
 	inboxA := subscriptionInbox(t, "INSTANCE_0")
 	inboxB := subscriptionInbox(t, "INSTANCE_1")
 	producer := newProducer()
@@ -86,6 +88,7 @@ func TestMultipleConsumers(t *testing.T) {
 }
 
 func TestDeadConsumer(t *testing.T) {
+	fmt.Printf("===== TestDeadConsumer =====")
 	deadSubscriptionInbox(t, "INSTANCE_0")
 	inbox := subscriptionInbox(t, "INSTANCE_1")
 	producer := newProducer()
@@ -132,6 +135,7 @@ type userNeedSet map[userneed.UserNeed]bool
 func assertReceived(t *testing.T, inbox chan *userneed.UserNeed, expected userNeedSet) *userneed.UserNeed {
 	select {
 	case actual := <-inbox:
+		fmt.Printf("Got something: %v :)\n", *actual)
 		if present, found := expected[*actual]; !found || !present {
 			t.Errorf("Expected %v to be in %v", *actual, expected)
 			return nil
@@ -139,7 +143,8 @@ func assertReceived(t *testing.T, inbox chan *userneed.UserNeed, expected userNe
 		expected[*actual] = false
 		return actual
 
-	case <-time.After(5000 * time.Millisecond):
+	case <-time.After(1500 * time.Millisecond):
+		fmt.Printf("Timed out :(\n")
 		t.Errorf("Expected to receive one of %v, got nothing", expected)
 	}
 
@@ -171,7 +176,7 @@ func newProducer() AsyncProducer {
 	return AsyncProducer{producer}
 }
 
-func newConsumer(instanceId string) (consumer fanout.Consumer) {
+func newConsumer(instanceId string) (consumer *fanout.Consumer) {
 	_ = retry(func() (err error) {
 		consumer, err = fanout.NewConsumer(fanouts, instanceId)
 		return

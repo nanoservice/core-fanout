@@ -16,6 +16,7 @@ import (
 
 type clientInbox struct {
 	inbox chan messages.Message
+	count int
 }
 
 type roundRobinT struct {
@@ -31,7 +32,7 @@ var (
 		next:    0,
 		mux:     &sync.Mutex{},
 	}
-	blackHole = clientInbox{make(chan messages.Message)}
+	blackHole = clientInbox{make(chan messages.Message), 1}
 	acks      = make(map[messages.MessageAck]chan bool)
 )
 
@@ -63,10 +64,10 @@ func main() {
 	go func() {
 		for message := range blackHole.inbox {
 			fmt.Printf("Got message in blackhole: %v\n", message)
-			go func() {
-				<-time.After(5 * time.Millisecond)
+			go func(message messages.Message) {
+				fmt.Printf("Gonna re-send message from blackhole: %v\n", message)
 				nextRoundRobinClient().inbox <- message
-			}()
+			}(message)
 		}
 	}()
 
@@ -140,12 +141,31 @@ func retryCustom(times int, interval time.Duration, fn func() error) (err error)
 	return
 }
 
-func addClient(instanceId string, client clientInbox) {
-	roundRobin.mux.Lock()
-	clients[instanceId] = client
+func rebuildRoundRobin() {
 	roundRobin.clients = make([]clientInbox, 0)
 	for _, v := range clients {
 		roundRobin.clients = append(roundRobin.clients, v)
+	}
+}
+
+func addClient(instanceId string, client clientInbox) {
+	roundRobin.mux.Lock()
+	if oldClient, found := clients[instanceId]; found {
+		client.count += oldClient.count
+	}
+	clients[instanceId] = client
+	rebuildRoundRobin()
+	roundRobin.mux.Unlock()
+}
+
+func clientDead(instanceId string) {
+	roundRobin.mux.Lock()
+	if client, found := clients[instanceId]; found {
+		client.count -= 1
+		if client.count < 1 {
+			delete(clients, instanceId)
+			rebuildRoundRobin()
+		}
 	}
 	roundRobin.mux.Unlock()
 }
@@ -181,17 +201,59 @@ func handleClient(conn net.Conn) {
 	inbox := make(chan messages.Message, CHANNEL_BUFFER_SIZE)
 	client := clientInbox{
 		inbox: inbox,
+		count: 1,
 	}
 	addClient(instanceId, client)
 
+	ackErrors := make(chan error)
+
 	go func() {
 		for {
+			var messageSize int32
+			err := stream.ReadWith(func() error {
+				return binary.Read(stream.Reader, binary.LittleEndian, &messageSize)
+			})
+			if err != nil {
+				ackErrors <- err
+				continue
+			}
+
+			err = stream.ReadWith(func() error {
+				if int32(stream.Reader.Len()) < messageSize {
+					return comm.EOFError
+				}
+				return nil
+			})
+			if err != nil {
+				ackErrors <- err
+				continue
+			}
+
+			rawAck := stream.Reader.Next(int(messageSize))
+			if err != nil {
+				ackErrors <- err
+				continue
+			}
+
+			var ack messages.MessageAck
+			err = proto.Unmarshal(rawAck, &ack)
+			if err != nil {
+				ackErrors <- err
+				continue
+			}
+
+			if _, found := acks[ack]; found {
+				fmt.Printf("Got ack: %v\n", ack)
+				acks[ack] <- true
+			}
 		}
 	}()
 
+	dead := make(chan bool)
 	for {
-		for message := range inbox {
-			go func(message messages.Message) {
+		select {
+		case message := <-inbox:
+			go func(message messages.Message, dead chan bool) {
 				buf := new(bytes.Buffer)
 				rawMessage, err := proto.Marshal(&message)
 				if err != nil {
@@ -203,12 +265,14 @@ func handleClient(conn net.Conn) {
 				err = binary.Write(buf, binary.LittleEndian, size)
 				if err != nil {
 					fmt.Printf("Unable to dump message size to buffer: %v\n", err)
+					dead <- true
 					return
 				}
 
 				_, err = buf.Write(rawMessage)
 				if err != nil {
 					fmt.Printf("Unable to dump raw message to buffer: %v\n", err)
+					dead <- true
 					return
 				}
 
@@ -216,6 +280,7 @@ func handleClient(conn net.Conn) {
 				_, err = buf.WriteTo(conn)
 				if err != nil {
 					fmt.Printf("Unable to write to client connection: %v\n", err)
+					dead <- true
 					return
 				}
 
@@ -228,12 +293,18 @@ func handleClient(conn net.Conn) {
 				go func() {
 					select {
 					case _ = <-acks[expectedAck]:
-						return
+						break
 					case <-time.After(50 * time.Millisecond):
 						blackHole.inbox <- message
+						dead <- true
 					}
+					delete(acks, expectedAck)
 				}()
-			}(message)
+			}(message, dead)
+
+		case <-ackErrors:
+		case <-dead:
+			clientDead(instanceId)
 		}
 	}
 }

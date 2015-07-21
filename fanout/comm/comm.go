@@ -3,7 +3,7 @@ package comm
 import (
 	"bytes"
 	"errors"
-	"fmt"
+	//"fmt"
 	"io"
 )
 
@@ -52,15 +52,15 @@ func (s *Stream) readWith(fn func() error) (errorTrampolineFunc, error) {
 		return nil, nil
 	}
 
-	fmt.Printf("comm.Stream: err was %v, re-reading\n", err)
+	//fmt.Printf("comm.Stream: err was %v, re-reading\n", err)
 
 	n, err := s.conn.Read(s.data)
 	if err != nil {
-		fmt.Printf("comm.Stream: unable to re-read: %v\n", err)
+		//fmt.Printf("comm.Stream: unable to re-read: %v\n", err)
 		return nil, err
 	}
 
-	fmt.Printf("comm.Stream: re-read %d bytes\n", n)
+	//fmt.Printf("comm.Stream: re-read %d bytes\n", n)
 
 	s.Reader = bytes.NewBuffer(
 		append(bytesBefore, s.data[0:n]...),
