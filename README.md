@@ -16,7 +16,7 @@ It uses Apache Kafka as a Bus.
    * [x] subscribe to test topic
    * [x] subscribe to all partitions of this topic
    * [ ] subscribe to topic provided by commandline argument
-   * [ ] listen to multiple kafkas (up to 3)
+   * [x] listen to multiple kafkas (up to 3)
    * [ ] detect count of available kafkas and listen to all of them
  * [ ] fanout to the clients
    * [x] fanout everything to all clients
@@ -46,7 +46,7 @@ It uses Apache Kafka as a Bus.
    * [ ] use standard logging library instead of fmt
    * [ ] `--verbose` option for showing logs with `severity > INFO`
  * [ ] testing
-   * [ ] basic integration tests
+   * [x] basic integration tests
    * [ ] special case integration tests (like network partition, for example)
    * [ ] refactoring + unit tests
 
