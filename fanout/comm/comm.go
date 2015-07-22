@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	BufferSize = 16
+	BufferSize = 4096
 )
 
 var (
