@@ -3,11 +3,12 @@ package comm
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 )
 
 const (
-	bufferSize = 4096
+	BufferSize = 16
 )
 
 var (
@@ -23,12 +24,14 @@ type Stream struct {
 type errorTrampolineFunc func() (errorTrampolineFunc, error)
 
 func NewStream(conn io.Reader) (*Stream, error) {
-	data := make([]byte, bufferSize)
+	data := make([]byte, BufferSize)
 
 	n, err := conn.Read(data)
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Printf("Read %d bytes\n", n)
 
 	stream := &Stream{
 		data:   data,
@@ -44,7 +47,8 @@ func (s *Stream) ReadWith(fn func() error) error {
 }
 
 func (s *Stream) readWith(fn func() error) (errorTrampolineFunc, error) {
-	bytesBefore := s.Reader.Bytes()
+	bytesBefore := make([]byte, s.Reader.Len())
+	copy(bytesBefore, s.Reader.Bytes())
 
 	err := fn()
 	if err == nil {
@@ -55,6 +59,8 @@ func (s *Stream) readWith(fn func() error) (errorTrampolineFunc, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Printf("Read %d bytes\n", n)
 
 	s.Reader = bytes.NewBuffer(
 		append(bytesBefore, s.data[0:n]...),
