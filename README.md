@@ -45,6 +45,10 @@ It uses Apache Kafka as a Bus.
  * [ ] logging
    * [ ] use standard logging library instead of fmt
    * [ ] `--verbose` option for showing logs with `severity > INFO`
+ * [ ] testing
+   * [ ] basic integration tests
+   * [ ] special case integration tests (like network partition, for example)
+   * [ ] refactoring + unit tests
 
 ### Usage
 
