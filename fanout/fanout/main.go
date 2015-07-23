@@ -96,6 +96,9 @@ func handleConsumer(consumer kafka.PartitionConsumer) {
 func newConsumer() (masterConsumer kafka.Consumer, consumers []kafka.PartitionConsumer) {
 	topic := "test_topic"
 	config := kafka.NewConfig()
+	config.Net.KeepAlive = 30 * time.Second
+	config.Consumer.Retry.Backoff = 25 * time.Millisecond
+
 	consumers = make([]kafka.PartitionConsumer, 0)
 
 	retry(func() (err error) {
@@ -194,9 +197,16 @@ func handleClient(conn net.Conn) {
 
 	stream.ReadWith(func() (err error) {
 		instanceId, err = stream.Reader.ReadString(byte('\n'))
-		fmt.Printf("got client: %s\n", instanceId)
 		return
 	})
+
+	if instanceId == "-PING\n" {
+		fmt.Printf("got ping: -PING; answering with: +PONG\n")
+		fmt.Fprint(conn, "+PONG\n")
+		return
+	}
+
+	fmt.Printf("got client: %s\n", instanceId)
 
 	inbox := make(chan messages.Message, CHANNEL_BUFFER_SIZE)
 	client := clientInbox{

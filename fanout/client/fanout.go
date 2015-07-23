@@ -3,6 +3,7 @@ package fanout
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"github.com/golang/protobuf/proto"
 	"github.com/nanoservice/core-fanout/fanout/comm"
@@ -27,6 +28,39 @@ const (
 	STATE_WAIT_VALUE    = 1
 	CHANNEL_BUFFER_SIZE = 100
 )
+
+var (
+	NoPongFromServer = errors.New("No +PONG from server")
+)
+
+func Ping(fanouts []string) error {
+	var response string
+
+	conn, err := net.Dial("tcp", fanouts[0])
+	if err != nil {
+		fmt.Println("Unable to connect to fanout :(")
+		return err
+	}
+
+	fmt.Fprint(conn, "-PING\n")
+
+	stream, err := comm.NewStream(conn)
+	if err != nil {
+		fmt.Printf("Unable to create stream: %v\n", err)
+		return err
+	}
+
+	stream.ReadWith(func() (err error) {
+		response, err = stream.Reader.ReadString(byte('\n'))
+		return
+	})
+
+	if response != "+PONG\n" {
+		return NoPongFromServer
+	}
+
+	return nil
+}
 
 func NewConsumer(fanouts []string, instanceId string) (*Consumer, error) {
 	consumer := &Consumer{

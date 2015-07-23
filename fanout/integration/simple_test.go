@@ -46,6 +46,19 @@ var (
 	}
 )
 
+func TestMain(m *testing.M) {
+	err := retry(func() error {
+		return fanout.Ping(fanouts)
+	})
+
+	if err != nil {
+		fmt.Println("Unable to ping fanout :(")
+		os.Exit(1)
+	}
+
+	os.Exit(m.Run())
+}
+
 func TestOneConsumer(t *testing.T) {
 	fmt.Printf("===== TestOneConsumer =====")
 	inbox := subscriptionInbox(t, "INSTANCE_0")
@@ -143,7 +156,7 @@ func assertReceived(t *testing.T, inbox chan *userneed.UserNeed, expected userNe
 		expected[*actual] = false
 		return actual
 
-	case <-time.After(1500 * time.Millisecond):
+	case <-time.After(2000 * time.Millisecond):
 		fmt.Printf("Timed out :(\n")
 		t.Errorf("Expected to receive one of %v, got nothing", expected)
 	}
