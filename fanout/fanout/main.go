@@ -197,9 +197,16 @@ func handleClient(conn net.Conn) {
 
 	stream.ReadWith(func() (err error) {
 		instanceId, err = stream.Reader.ReadString(byte('\n'))
-		fmt.Printf("got client: %s\n", instanceId)
 		return
 	})
+
+	if instanceId == "-PING\n" {
+		fmt.Printf("got ping: -PING; answering with: +PONG\n")
+		fmt.Fprint(conn, "+PONG\n")
+		return
+	}
+
+	fmt.Printf("got client: %s\n", instanceId)
 
 	inbox := make(chan messages.Message, CHANNEL_BUFFER_SIZE)
 	client := clientInbox{
