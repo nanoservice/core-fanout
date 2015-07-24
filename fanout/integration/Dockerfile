@@ -1,8 +1,4 @@
-FROM nanoservice/go
-
+FROM nanoservice-dev/fanout-base
 ADD . /go/src/github.com/nanoservice/core-fanout/fanout
 WORKDIR /go/src/github.com/nanoservice/core-fanout/fanout
-
-RUN go get -d -t --tags integration ./...
-
 ENTRYPOINT ["go", "test", "./...", "--tags", "integration"]

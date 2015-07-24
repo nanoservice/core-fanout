@@ -92,6 +92,11 @@ After that you can run `bin/integration` to verify it works
 
 Use normal TDD development style.
 
+To use faster integration tests:
+
+* `bin/dev-build` to build a base image for fanout, first time and when adding new dependency;
+* `bin/integration fast` to run faster integration test.
+
 ## Contributing
 
 1. Fork it ( https://github.com/nanoservice/core-fanout/fork )
