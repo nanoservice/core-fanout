@@ -4,7 +4,8 @@ set -e
 
 bin/compose build
 if [[ "$1" = "fast" ]]; then
-  bin/compose restart fanout
+  bin/compose stop fanout
+  bin/compose rm -f fanout
   bin/compose rm -f integration
   bin/compose up -d --no-recreate fanout
   bin/compose up --no-recreate integration
