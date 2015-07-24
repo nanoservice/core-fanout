@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+docker build -t nanoservice-dev/fanout-base -f ./fanout/Dockerfile.base ./fanout
