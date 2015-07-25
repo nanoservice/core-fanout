@@ -105,29 +105,36 @@ func (s *Stream) WriteMessage(message proto.Message) error {
 	}).Err()
 }
 
-func (s *Stream) readWith(fn func() error) (errorTrampolineFunc, error) {
+func (s *Stream) readWith(fn func() error) (newFn errorTrampolineFunc, err error) {
+	var n int
 	bytesBefore := make([]byte, s.reader.Len())
 	copy(bytesBefore, s.reader.Bytes())
 
-	err := fn()
-	if err == nil {
-		return nil, nil
-	}
+	e := Error.Return(fn())
 
-	n, err := s.conn.Read(s.data)
-	if err != nil {
-		return nil, err
-	}
+	err = e.OnError().Bind(func() (err error) {
+		n, err = s.conn.Read(s.data)
+		return
 
-	log.Printf("Read %d bytes\n", n)
+	}).Bind(func() error {
+		log.Printf("Re-read %d bytes\n", n)
 
-	s.reader = bytes.NewBuffer(
-		append(bytesBefore, s.data[0:n]...),
-	)
+		s.reader = bytes.NewBuffer(
+			append(bytesBefore, s.data[0:n]...),
+		)
+		newFn = func() (errorTrampolineFunc, error) {
+			return s.readWith(fn)
+		}
+		return nil
 
-	return func() (errorTrampolineFunc, error) {
-		return s.readWith(fn)
-	}, nil
+	}).Err()
+
+	e.Bind(func() error {
+		err = nil
+		return nil
+	})
+
+	return newFn, err
 }
 
 func errorTrampoline(fn errorTrampolineFunc, err error) error {
