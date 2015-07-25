@@ -3,12 +3,12 @@
 package integration
 
 import (
-	"fmt"
 	kafka "github.com/Shopify/sarama"
 	"github.com/golang/protobuf/proto"
 	fanout "github.com/nanoservice/core-fanout/fanout/client"
 	"github.com/nanoservice/core-fanout/fanout/integration/userneed"
 	"github.com/nanoservice/core-fanout/fanout/messages"
+	"log"
 	"os"
 	"testing"
 	"time"
@@ -52,7 +52,7 @@ func TestMain(m *testing.M) {
 	})
 
 	if err != nil {
-		fmt.Println("Unable to ping fanout :(")
+		log.Println("Unable to ping fanout :(")
 		os.Exit(1)
 	}
 
@@ -60,7 +60,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestOneConsumer(t *testing.T) {
-	fmt.Printf("===== TestOneConsumer =====")
+	log.Printf("===== TestOneConsumer =====")
 	inbox := subscriptionInbox(t, "INSTANCE_0")
 	producer := newProducer()
 
@@ -80,7 +80,7 @@ func TestOneConsumer(t *testing.T) {
 }
 
 func TestMultipleConsumers(t *testing.T) {
-	fmt.Printf("===== TestMultipleConsumers =====")
+	log.Printf("===== TestMultipleConsumers =====")
 	inboxA := subscriptionInbox(t, "INSTANCE_0")
 	inboxB := subscriptionInbox(t, "INSTANCE_1")
 	producer := newProducer()
@@ -101,7 +101,7 @@ func TestMultipleConsumers(t *testing.T) {
 }
 
 func TestDeadConsumer(t *testing.T) {
-	fmt.Printf("===== TestDeadConsumer =====")
+	log.Printf("===== TestDeadConsumer =====")
 	deadSubscriptionInbox(t, "INSTANCE_0")
 	inbox := subscriptionInbox(t, "INSTANCE_1")
 	producer := newProducer()
@@ -132,7 +132,7 @@ func subscriptionInbox(t *testing.T, instanceId string) (inbox chan *userneed.Us
 
 	newConsumer(instanceId).Subscribe(func(raw messages.Message) {
 		message := &userneed.UserNeed{}
-		fmt.Printf("Got raw message: %v with id=%d:%d\n", raw.Value, raw.Partition, raw.Offset)
+		log.Printf("Got raw message: %v with id=%d:%d\n", raw.Value, raw.Partition, raw.Offset)
 		err := proto.Unmarshal(raw.Value, message)
 		if err != nil {
 			t.Errorf("Unmarshal error: %v", err)
@@ -148,7 +148,7 @@ type userNeedSet map[userneed.UserNeed]bool
 func assertReceived(t *testing.T, inbox chan *userneed.UserNeed, expected userNeedSet) *userneed.UserNeed {
 	select {
 	case actual := <-inbox:
-		fmt.Printf("Got something: %v :)\n", *actual)
+		log.Printf("Got something: %v :)\n", *actual)
 		if present, found := expected[*actual]; !found || !present {
 			t.Errorf("Expected %v to be in %v", *actual, expected)
 			return nil
@@ -157,7 +157,7 @@ func assertReceived(t *testing.T, inbox chan *userneed.UserNeed, expected userNe
 		return actual
 
 	case <-time.After(2000 * time.Millisecond):
-		fmt.Printf("Timed out :(\n")
+		log.Printf("Timed out :(\n")
 		t.Errorf("Expected to receive one of %v, got nothing", expected)
 	}
 
@@ -207,9 +207,9 @@ func retryCustom(times int, interval time.Duration, fn func() error) (err error)
 		if err == nil {
 			return
 		}
-		fmt.Printf("Got error: %v, retrying..\n", err)
+		log.Printf("Got error: %v, retrying..\n", err)
 		time.Sleep(interval)
 	}
-	fmt.Println("Gave up :(")
+	log.Println("Gave up :(")
 	return
 }

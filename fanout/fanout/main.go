@@ -8,6 +8,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/nanoservice/core-fanout/fanout/comm"
 	"github.com/nanoservice/core-fanout/fanout/messages"
+	"log"
 	"net"
 	"os"
 	"sync"
@@ -51,7 +52,7 @@ const (
 func main() {
 	server, err := net.Listen("tcp", ":4987")
 	if err != nil {
-		fmt.Printf("Unable to listen on port :4987: %v", err)
+		log.Printf("Unable to listen on port :4987: %v", err)
 		os.Exit(1)
 	}
 
@@ -63,9 +64,9 @@ func main() {
 
 	go func() {
 		for message := range blackHole.inbox {
-			fmt.Printf("Got message in blackhole: %v\n", message)
+			log.Printf("Got message in blackhole: %v\n", message)
 			go func(message messages.Message) {
-				fmt.Printf("Gonna re-send message from blackhole: %v\n", message)
+				log.Printf("Gonna re-send message from blackhole: %v\n", message)
 				nextRoundRobinClient().inbox <- message
 			}(message)
 		}
@@ -74,7 +75,7 @@ func main() {
 	for {
 		conn, err := server.Accept()
 		if err != nil {
-			fmt.Printf("Unable to accept connection: %v", err)
+			log.Printf("Unable to accept connection: %v", err)
 			continue
 		}
 
@@ -84,7 +85,7 @@ func main() {
 
 func handleConsumer(consumer kafka.PartitionConsumer) {
 	for message := range consumer.Messages() {
-		fmt.Printf("Got message: %v\n", message)
+		log.Printf("Got message: %v\n", message)
 		nextRoundRobinClient().inbox <- messages.Message{
 			Value:     message.Value,
 			Partition: message.Partition,
@@ -191,7 +192,7 @@ func handleClient(conn net.Conn) {
 
 	stream, err := comm.NewStream(conn)
 	if err != nil {
-		fmt.Printf("Unable to create stream: %v\n", err)
+		log.Printf("Unable to create stream: %v\n", err)
 		return
 	}
 
@@ -201,12 +202,12 @@ func handleClient(conn net.Conn) {
 	})
 
 	if instanceId == "-PING\n" {
-		fmt.Printf("got ping: -PING; answering with: +PONG\n")
+		log.Printf("got ping: -PING; answering with: +PONG\n")
 		fmt.Fprint(conn, "+PONG\n")
 		return
 	}
 
-	fmt.Printf("got client: %s\n", instanceId)
+	log.Printf("got client: %s\n", instanceId)
 
 	inbox := make(chan messages.Message, CHANNEL_BUFFER_SIZE)
 	client := clientInbox{
@@ -253,7 +254,7 @@ func handleClient(conn net.Conn) {
 			}
 
 			if _, found := acks[ack]; found {
-				fmt.Printf("Got ack: %v\n", ack)
+				log.Printf("Got ack: %v\n", ack)
 				acks[ack] <- true
 			}
 		}
@@ -267,29 +268,29 @@ func handleClient(conn net.Conn) {
 				buf := new(bytes.Buffer)
 				rawMessage, err := proto.Marshal(&message)
 				if err != nil {
-					fmt.Printf("Unable to marshal message: %v\n", err)
+					log.Printf("Unable to marshal message: %v\n", err)
 					return
 				}
 
 				var size int32 = int32(len(rawMessage))
 				err = binary.Write(buf, binary.LittleEndian, size)
 				if err != nil {
-					fmt.Printf("Unable to dump message size to buffer: %v\n", err)
+					log.Printf("Unable to dump message size to buffer: %v\n", err)
 					dead <- true
 					return
 				}
 
 				_, err = buf.Write(rawMessage)
 				if err != nil {
-					fmt.Printf("Unable to dump raw message to buffer: %v\n", err)
+					log.Printf("Unable to dump raw message to buffer: %v\n", err)
 					dead <- true
 					return
 				}
 
-				fmt.Printf("Gonna send message: %v\n", buf.Bytes())
+				log.Printf("Gonna send message: %v\n", buf.Bytes())
 				_, err = buf.WriteTo(conn)
 				if err != nil {
-					fmt.Printf("Unable to write to client connection: %v\n", err)
+					log.Printf("Unable to write to client connection: %v\n", err)
 					dead <- true
 					return
 				}
