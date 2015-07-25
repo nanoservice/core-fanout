@@ -2,7 +2,9 @@ package comm
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
+	"github.com/golang/protobuf/proto"
 	"io"
 	"log"
 )
@@ -17,7 +19,7 @@ var (
 
 type Stream struct {
 	data   []byte
-	Reader *bytes.Buffer
+	reader *bytes.Buffer
 	conn   io.Reader
 }
 
@@ -35,7 +37,7 @@ func NewStream(conn io.Reader) (*Stream, error) {
 
 	stream := &Stream{
 		data:   data,
-		Reader: bytes.NewBuffer(data[0:n]),
+		reader: bytes.NewBuffer(data[0:n]),
 		conn:   conn,
 	}
 
@@ -46,9 +48,41 @@ func (s *Stream) ReadWith(fn func() error) error {
 	return errorTrampoline(s.readWith(fn))
 }
 
+func (s *Stream) ReadLine() (result string, err error) {
+	err = s.ReadWith(func() (err error) {
+		result, err = s.reader.ReadString(byte('\n'))
+		return
+	})
+	return
+}
+
+func (s *Stream) ReadMessage(message proto.Message) (err error) {
+	var messageSize int32
+	err = s.ReadWith(func() error {
+		return binary.Read(s.reader, binary.LittleEndian, &messageSize)
+	})
+	if err != nil {
+		return
+	}
+
+	err = s.ReadWith(func() error {
+		if int32(s.reader.Len()) < messageSize {
+			return EOFError
+		}
+		return nil
+	})
+	if err != nil {
+		return
+	}
+
+	rawMessage := s.reader.Next(int(messageSize))
+	err = proto.Unmarshal(rawMessage, message)
+	return
+}
+
 func (s *Stream) readWith(fn func() error) (errorTrampolineFunc, error) {
-	bytesBefore := make([]byte, s.Reader.Len())
-	copy(bytesBefore, s.Reader.Bytes())
+	bytesBefore := make([]byte, s.reader.Len())
+	copy(bytesBefore, s.reader.Bytes())
 
 	err := fn()
 	if err == nil {
@@ -62,7 +96,7 @@ func (s *Stream) readWith(fn func() error) (errorTrampolineFunc, error) {
 
 	log.Printf("Read %d bytes\n", n)
 
-	s.Reader = bytes.NewBuffer(
+	s.reader = bytes.NewBuffer(
 		append(bytesBefore, s.data[0:n]...),
 	)
 

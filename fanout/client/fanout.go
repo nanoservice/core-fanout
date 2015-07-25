@@ -19,14 +19,7 @@ type Consumer struct {
 	SendAcks   bool
 }
 
-type listenState struct {
-	state    int
-	sizeLeft int32
-}
-
 const (
-	STATE_WAIT_SIZE     = 0
-	STATE_WAIT_VALUE    = 1
 	CHANNEL_BUFFER_SIZE = 100
 )
 
@@ -51,10 +44,10 @@ func Ping(fanouts []string) error {
 		return err
 	}
 
-	stream.ReadWith(func() (err error) {
-		response, err = stream.Reader.ReadString(byte('\n'))
-		return
-	})
+	response, err = stream.ReadLine()
+	if err != nil {
+		return err
+	}
 
 	if response != "+PONG\n" {
 		return NoPongFromServer
@@ -100,72 +93,52 @@ func (c *Consumer) listen() error {
 			return
 		}
 
-		state := listenState{STATE_WAIT_SIZE, 0}
-
 		for {
-			if state.state == STATE_WAIT_SIZE {
-				stream.ReadWith(func() error {
-					return binary.Read(stream.Reader, binary.LittleEndian, &state.sizeLeft)
-				})
-				log.Printf("Got message size: %d\n", state.sizeLeft)
-				state.state = STATE_WAIT_VALUE
-			} else if state.state == STATE_WAIT_VALUE {
-				stream.ReadWith(func() error {
-					if stream.Reader.Len() < int(state.sizeLeft) {
-						return comm.EOFError
-					}
-					return nil
-				})
-				readData := stream.Reader.Next(int(state.sizeLeft))
-				log.Printf("Got message: %v\n", readData)
-				state.state = STATE_WAIT_SIZE
-
-				var message messages.Message
-				err := proto.Unmarshal(readData, &message)
-				if err != nil {
-					log.Printf("Unable to unmarshal message: %v\n", err)
-					continue
-				}
-
-				go func(message messages.Message) {
-					if c.SendAcks {
-						buf := new(bytes.Buffer)
-
-						ack := &messages.MessageAck{
-							Partition: message.Partition,
-							Offset:    message.Offset,
-						}
-
-						rawAck, err := proto.Marshal(ack)
-						if err != nil {
-							log.Printf("Unable to marshal message ack: %v\n", err)
-							return
-						}
-
-						var size int32 = int32(len(rawAck))
-						err = binary.Write(buf, binary.LittleEndian, size)
-						if err != nil {
-							log.Printf("Unable to dump message ack size: %v\n", err)
-							return
-						}
-
-						_, err = buf.Write(rawAck)
-						if err != nil {
-							log.Printf("Unable to dump message ack: %v\n", err)
-							return
-						}
-
-						_, err = buf.WriteTo(conn)
-						if err != nil {
-							log.Printf("Unable to send message ack: %v\n", err)
-						}
-
-						log.Printf("Sent ack from %s: %v\n", c.instanceId, rawAck)
-					}
-				}(message)
-
-				c.messages <- message
+			var message messages.Message
+			err := stream.ReadMessage(&message)
+			if err != nil {
+				log.Printf("Unable to unmarshal message: %v\n", err)
+				continue
 			}
+
+			go func(message messages.Message) {
+				if c.SendAcks {
+					buf := new(bytes.Buffer)
+
+					ack := &messages.MessageAck{
+						Partition: message.Partition,
+						Offset:    message.Offset,
+					}
+
+					rawAck, err := proto.Marshal(ack)
+					if err != nil {
+						log.Printf("Unable to marshal message ack: %v\n", err)
+						return
+					}
+
+					var size int32 = int32(len(rawAck))
+					err = binary.Write(buf, binary.LittleEndian, size)
+					if err != nil {
+						log.Printf("Unable to dump message ack size: %v\n", err)
+						return
+					}
+
+					_, err = buf.Write(rawAck)
+					if err != nil {
+						log.Printf("Unable to dump message ack: %v\n", err)
+						return
+					}
+
+					_, err = buf.WriteTo(conn)
+					if err != nil {
+						log.Printf("Unable to send message ack: %v\n", err)
+					}
+
+					log.Printf("Sent ack from %s: %v\n", c.instanceId, rawAck)
+				}
+			}(message)
+
+			c.messages <- message
 		}
 	}()
 

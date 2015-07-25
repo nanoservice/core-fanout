@@ -196,10 +196,11 @@ func handleClient(conn net.Conn) {
 		return
 	}
 
-	stream.ReadWith(func() (err error) {
-		instanceId, err = stream.Reader.ReadString(byte('\n'))
+	instanceId, err = stream.ReadLine()
+	if err != nil {
+		log.Printf("Unable to identify client: %v\n", err)
 		return
-	})
+	}
 
 	if instanceId == "-PING\n" {
 		log.Printf("got ping: -PING; answering with: +PONG\n")
@@ -220,34 +221,8 @@ func handleClient(conn net.Conn) {
 
 	go func() {
 		for {
-			var messageSize int32
-			err := stream.ReadWith(func() error {
-				return binary.Read(stream.Reader, binary.LittleEndian, &messageSize)
-			})
-			if err != nil {
-				ackErrors <- err
-				continue
-			}
-
-			err = stream.ReadWith(func() error {
-				if int32(stream.Reader.Len()) < messageSize {
-					return comm.EOFError
-				}
-				return nil
-			})
-			if err != nil {
-				ackErrors <- err
-				continue
-			}
-
-			rawAck := stream.Reader.Next(int(messageSize))
-			if err != nil {
-				ackErrors <- err
-				continue
-			}
-
 			var ack messages.MessageAck
-			err = proto.Unmarshal(rawAck, &ack)
+			err = stream.ReadMessage(&ack)
 			if err != nil {
 				ackErrors <- err
 				continue
