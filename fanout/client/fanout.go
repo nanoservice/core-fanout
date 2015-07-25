@@ -2,11 +2,9 @@ package fanout
 
 import (
 	"errors"
-	"fmt"
 	"github.com/nanoservice/core-fanout/fanout/comm"
 	"github.com/nanoservice/core-fanout/fanout/messages"
 	"log"
-	"net"
 )
 
 type Consumer struct {
@@ -27,17 +25,16 @@ var (
 func Ping(fanouts []string) error {
 	var response string
 
-	conn, err := net.Dial("tcp", fanouts[0])
+	stream, err := comm.Dial(fanouts[0])
 	if err != nil {
-		log.Println("Unable to connect to fanout :(")
+		log.Printf("Unable to create stream: %v\n", err)
 		return err
 	}
 
-	fmt.Fprint(conn, "-PING\n")
+	defer stream.Close()
 
-	stream, err := comm.NewStream(conn)
+	err = stream.WriteLine("-PING")
 	if err != nil {
-		log.Printf("Unable to create stream: %v\n", err)
 		return err
 	}
 
@@ -73,20 +70,18 @@ func (c *Consumer) Subscribe(fn func(raw messages.Message)) {
 }
 
 func (c *Consumer) listen() error {
-	conn, err := net.Dial("tcp", c.fanouts[0])
-	if err != nil {
-		log.Println("Unable to connect to fanout :(")
-		return err
-	}
-
-	fmt.Fprintf(conn, "%s\n", c.instanceId)
-
 	go func() {
-		defer conn.Close()
-
-		stream, err := comm.NewStream(conn)
+		stream, err := comm.Dial(c.fanouts[0])
 		if err != nil {
 			log.Printf("Unable to obtain stream: %v\n", err)
+			return
+		}
+
+		defer stream.Close()
+
+		err = stream.WriteLine(c.instanceId)
+		if err != nil {
+			log.Printf("Unable to send own instance id: %v\n", err)
 			return
 		}
 

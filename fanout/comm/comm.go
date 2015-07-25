@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"github.com/golang/protobuf/proto"
 	Error "github.com/nanoservice/monad.go/error"
 	"io"
 	"log"
+	"net"
 )
 
 const (
@@ -21,30 +23,77 @@ var (
 type Stream struct {
 	data   []byte
 	reader *bytes.Buffer
-	conn   io.ReadWriter
+	conn   io.ReadWriteCloser
+}
+
+type Server struct {
+	tcpServer net.Listener
 }
 
 type errorTrampolineFunc func() (errorTrampolineFunc, error)
 
-func NewStream(conn io.ReadWriter) (stream *Stream, err error) {
-	var n int
-	data := make([]byte, BufferSize)
+func Listen(port string) (server *Server, err error) {
+	var tcpServer net.Listener
 
 	err = Error.Bind(func() (err error) {
-		n, err = conn.Read(data)
+		tcpServer, err = net.Listen("tcp", port)
 		return
 
 	}).Bind(func() error {
-		stream = &Stream{
-			data:   data,
-			reader: bytes.NewBuffer(data[0:n]),
-			conn:   conn,
-		}
-
+		server = &Server{tcpServer}
 		return nil
+
 	}).Err()
 
 	return
+}
+
+func NewStream(conn io.ReadWriteCloser) (stream *Stream, err error) {
+	data := make([]byte, BufferSize)
+
+	stream = &Stream{
+		data:   data,
+		reader: bytes.NewBuffer(data[0:0]),
+		conn:   conn,
+	}
+
+	return
+}
+
+func Dial(tcpAddr string) (stream *Stream, err error) {
+	var conn net.Conn
+
+	err = Error.Bind(func() (err error) {
+		conn, err = net.Dial("tcp", tcpAddr)
+		return
+
+	}).Bind(func() (err error) {
+		stream, err = NewStream(conn)
+		return
+
+	}).Err()
+
+	return
+}
+
+func (s *Server) Accept() (stream *Stream, err error) {
+	var conn net.Conn
+
+	err = Error.Bind(func() (err error) {
+		conn, err = s.tcpServer.Accept()
+		return
+
+	}).Bind(func() (err error) {
+		stream, err = NewStream(conn)
+		return
+
+	}).Err()
+
+	return
+}
+
+func (s *Stream) Close() {
+	s.conn.Close()
 }
 
 func (s *Stream) ReadWith(fn func() error) error {
@@ -56,6 +105,11 @@ func (s *Stream) ReadLine() (result string, err error) {
 		result, err = s.reader.ReadString(byte('\n'))
 		return
 	})
+	return
+}
+
+func (s *Stream) WriteLine(line string) (err error) {
+	_, err = fmt.Fprintf(s.conn, "%s\n", line)
 	return
 }
 

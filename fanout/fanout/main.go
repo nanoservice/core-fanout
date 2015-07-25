@@ -1,12 +1,10 @@
 package main
 
 import (
-	"fmt"
 	kafka "github.com/Shopify/sarama"
 	"github.com/nanoservice/core-fanout/fanout/comm"
 	"github.com/nanoservice/core-fanout/fanout/messages"
 	"log"
-	"net"
 	"os"
 	"sync"
 	"time"
@@ -47,7 +45,7 @@ const (
 )
 
 func main() {
-	server, err := net.Listen("tcp", ":4987")
+	server, err := comm.Listen(":4987")
 	if err != nil {
 		log.Printf("Unable to listen on port :4987: %v", err)
 		os.Exit(1)
@@ -183,17 +181,11 @@ func nextRoundRobinClient() (client clientInbox) {
 	return
 }
 
-func handleClient(conn net.Conn) {
-	defer conn.Close()
+func handleClient(stream *comm.Stream) {
+	defer stream.Close()
 	var instanceId string
 
-	stream, err := comm.NewStream(conn)
-	if err != nil {
-		log.Printf("Unable to create stream: %v\n", err)
-		return
-	}
-
-	instanceId, err = stream.ReadLine()
+	instanceId, err := stream.ReadLine()
 	if err != nil {
 		log.Printf("Unable to identify client: %v\n", err)
 		return
@@ -201,7 +193,10 @@ func handleClient(conn net.Conn) {
 
 	if instanceId == "-PING\n" {
 		log.Printf("got ping: -PING; answering with: +PONG\n")
-		fmt.Fprint(conn, "+PONG\n")
+		err = stream.WriteLine("+PONG")
+		if err != nil {
+			log.Printf("Unable to answer with +PONG: %v\n", err)
+		}
 		return
 	}
 
