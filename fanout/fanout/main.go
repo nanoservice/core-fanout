@@ -1,11 +1,8 @@
 package main
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
 	kafka "github.com/Shopify/sarama"
-	"github.com/golang/protobuf/proto"
 	"github.com/nanoservice/core-fanout/fanout/comm"
 	"github.com/nanoservice/core-fanout/fanout/messages"
 	"log"
@@ -240,32 +237,9 @@ func handleClient(conn net.Conn) {
 		select {
 		case message := <-inbox:
 			go func(message messages.Message, dead chan bool) {
-				buf := new(bytes.Buffer)
-				rawMessage, err := proto.Marshal(&message)
+				err := stream.WriteMessage(&message)
 				if err != nil {
-					log.Printf("Unable to marshal message: %v\n", err)
-					return
-				}
-
-				var size int32 = int32(len(rawMessage))
-				err = binary.Write(buf, binary.LittleEndian, size)
-				if err != nil {
-					log.Printf("Unable to dump message size to buffer: %v\n", err)
-					dead <- true
-					return
-				}
-
-				_, err = buf.Write(rawMessage)
-				if err != nil {
-					log.Printf("Unable to dump raw message to buffer: %v\n", err)
-					dead <- true
-					return
-				}
-
-				log.Printf("Gonna send message: %v\n", buf.Bytes())
-				_, err = buf.WriteTo(conn)
-				if err != nil {
-					log.Printf("Unable to write to client connection: %v\n", err)
+					log.Printf("Unable to send message to client: %v\n", err)
 					dead <- true
 					return
 				}

@@ -1,11 +1,8 @@
 package fanout
 
 import (
-	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/golang/protobuf/proto"
 	"github.com/nanoservice/core-fanout/fanout/comm"
 	"github.com/nanoservice/core-fanout/fanout/messages"
 	"log"
@@ -103,38 +100,17 @@ func (c *Consumer) listen() error {
 
 			go func(message messages.Message) {
 				if c.SendAcks {
-					buf := new(bytes.Buffer)
-
 					ack := &messages.MessageAck{
 						Partition: message.Partition,
 						Offset:    message.Offset,
 					}
 
-					rawAck, err := proto.Marshal(ack)
-					if err != nil {
-						log.Printf("Unable to marshal message ack: %v\n", err)
-						return
-					}
-
-					var size int32 = int32(len(rawAck))
-					err = binary.Write(buf, binary.LittleEndian, size)
-					if err != nil {
-						log.Printf("Unable to dump message ack size: %v\n", err)
-						return
-					}
-
-					_, err = buf.Write(rawAck)
-					if err != nil {
-						log.Printf("Unable to dump message ack: %v\n", err)
-						return
-					}
-
-					_, err = buf.WriteTo(conn)
+					err := stream.WriteMessage(ack)
 					if err != nil {
 						log.Printf("Unable to send message ack: %v\n", err)
 					}
 
-					log.Printf("Sent ack from %s: %v\n", c.instanceId, rawAck)
+					log.Printf("Sent ack from %s: %v\n", c.instanceId, *ack)
 				}
 			}(message)
 

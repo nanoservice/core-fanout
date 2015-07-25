@@ -20,12 +20,12 @@ var (
 type Stream struct {
 	data   []byte
 	reader *bytes.Buffer
-	conn   io.Reader
+	conn   io.ReadWriter
 }
 
 type errorTrampolineFunc func() (errorTrampolineFunc, error)
 
-func NewStream(conn io.Reader) (*Stream, error) {
+func NewStream(conn io.ReadWriter) (*Stream, error) {
 	data := make([]byte, BufferSize)
 
 	n, err := conn.Read(data)
@@ -77,6 +77,29 @@ func (s *Stream) ReadMessage(message proto.Message) (err error) {
 
 	rawMessage := s.reader.Next(int(messageSize))
 	err = proto.Unmarshal(rawMessage, message)
+	return
+}
+
+func (s *Stream) WriteMessage(message proto.Message) (err error) {
+	buf := new(bytes.Buffer)
+
+	rawMessage, err := proto.Marshal(message)
+	if err != nil {
+		return
+	}
+
+	size := int32(len(rawMessage))
+	err = binary.Write(buf, binary.LittleEndian, size)
+	if err != nil {
+		return
+	}
+
+	_, err = buf.Write(rawMessage)
+	if err != nil {
+		return
+	}
+
+	_, err = buf.WriteTo(s.conn)
 	return
 }
 
