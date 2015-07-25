@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"github.com/golang/protobuf/proto"
+	Error "github.com/nanoservice/monad.go/error"
 	"io"
 	"log"
 )
@@ -29,7 +30,7 @@ func NewStream(conn io.ReadWriter) (stream *Stream, err error) {
 	var n int
 	data := make([]byte, BufferSize)
 
-	err = Bind(func() (err error) {
+	err = Error.Bind(func() (err error) {
 		n, err = conn.Read(data)
 		return
 
@@ -41,7 +42,7 @@ func NewStream(conn io.ReadWriter) (stream *Stream, err error) {
 		}
 
 		return nil
-	}).Err
+	}).Err()
 
 	return
 }
@@ -61,7 +62,7 @@ func (s *Stream) ReadLine() (result string, err error) {
 func (s *Stream) ReadMessage(message proto.Message) error {
 	var messageSize int32
 
-	return Bind(func() error {
+	return Error.Bind(func() error {
 		return s.ReadWith(func() error {
 			return binary.Read(s.reader, binary.LittleEndian, &messageSize)
 		})
@@ -78,14 +79,14 @@ func (s *Stream) ReadMessage(message proto.Message) error {
 		rawMessage := s.reader.Next(int(messageSize))
 		return proto.Unmarshal(rawMessage, message)
 
-	}).Err
+	}).Err()
 }
 
 func (s *Stream) WriteMessage(message proto.Message) error {
 	buf := new(bytes.Buffer)
 	var rawMessage []byte
 
-	return Bind(func() (err error) {
+	return Error.Bind(func() (err error) {
 		rawMessage, err = proto.Marshal(message)
 		return
 
@@ -101,7 +102,7 @@ func (s *Stream) WriteMessage(message proto.Message) error {
 		_, err = buf.WriteTo(s.conn)
 		return
 
-	}).Err
+	}).Err()
 }
 
 func (s *Stream) readWith(fn func() error) (errorTrampolineFunc, error) {
