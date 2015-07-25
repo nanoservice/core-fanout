@@ -25,23 +25,25 @@ type Stream struct {
 
 type errorTrampolineFunc func() (errorTrampolineFunc, error)
 
-func NewStream(conn io.ReadWriter) (*Stream, error) {
+func NewStream(conn io.ReadWriter) (stream *Stream, err error) {
+	var n int
 	data := make([]byte, BufferSize)
 
-	n, err := conn.Read(data)
-	if err != nil {
-		return nil, err
-	}
+	err = Bind(func() (err error) {
+		n, err = conn.Read(data)
+		return
 
-	log.Printf("Read %d bytes\n", n)
+	}).Bind(func() error {
+		stream = &Stream{
+			data:   data,
+			reader: bytes.NewBuffer(data[0:n]),
+			conn:   conn,
+		}
 
-	stream := &Stream{
-		data:   data,
-		reader: bytes.NewBuffer(data[0:n]),
-		conn:   conn,
-	}
+		return nil
+	}).Err
 
-	return stream, nil
+	return
 }
 
 func (s *Stream) ReadWith(fn func() error) error {
@@ -56,51 +58,50 @@ func (s *Stream) ReadLine() (result string, err error) {
 	return
 }
 
-func (s *Stream) ReadMessage(message proto.Message) (err error) {
+func (s *Stream) ReadMessage(message proto.Message) error {
 	var messageSize int32
-	err = s.ReadWith(func() error {
-		return binary.Read(s.reader, binary.LittleEndian, &messageSize)
-	})
-	if err != nil {
-		return
-	}
 
-	err = s.ReadWith(func() error {
-		if int32(s.reader.Len()) < messageSize {
-			return EOFError
-		}
-		return nil
-	})
-	if err != nil {
-		return
-	}
+	return Bind(func() error {
+		return s.ReadWith(func() error {
+			return binary.Read(s.reader, binary.LittleEndian, &messageSize)
+		})
 
-	rawMessage := s.reader.Next(int(messageSize))
-	err = proto.Unmarshal(rawMessage, message)
-	return
+	}).Bind(func() error {
+		return s.ReadWith(func() error {
+			if int32(s.reader.Len()) < messageSize {
+				return EOFError
+			}
+			return nil
+		})
+
+	}).Bind(func() error {
+		rawMessage := s.reader.Next(int(messageSize))
+		return proto.Unmarshal(rawMessage, message)
+
+	}).Err
 }
 
-func (s *Stream) WriteMessage(message proto.Message) (err error) {
+func (s *Stream) WriteMessage(message proto.Message) error {
 	buf := new(bytes.Buffer)
+	var rawMessage []byte
 
-	rawMessage, err := proto.Marshal(message)
-	if err != nil {
+	return Bind(func() (err error) {
+		rawMessage, err = proto.Marshal(message)
 		return
-	}
 
-	size := int32(len(rawMessage))
-	err = binary.Write(buf, binary.LittleEndian, size)
-	if err != nil {
+	}).Bind(func() error {
+		size := int32(len(rawMessage))
+		return binary.Write(buf, binary.LittleEndian, size)
+
+	}).Bind(func() (err error) {
+		_, err = buf.Write(rawMessage)
 		return
-	}
 
-	_, err = buf.Write(rawMessage)
-	if err != nil {
+	}).Bind(func() (err error) {
+		_, err = buf.WriteTo(s.conn)
 		return
-	}
 
-	_, err = buf.WriteTo(s.conn)
-	return
+	}).Err
 }
 
 func (s *Stream) readWith(fn func() error) (errorTrampolineFunc, error) {
