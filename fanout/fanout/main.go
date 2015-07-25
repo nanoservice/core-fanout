@@ -1,15 +1,10 @@
 package main
 
 import (
-	"bytes"
-	"encoding/binary"
-	"fmt"
 	kafka "github.com/Shopify/sarama"
-	"github.com/golang/protobuf/proto"
 	"github.com/nanoservice/core-fanout/fanout/comm"
 	"github.com/nanoservice/core-fanout/fanout/messages"
 	"log"
-	"net"
 	"os"
 	"sync"
 	"time"
@@ -50,7 +45,7 @@ const (
 )
 
 func main() {
-	server, err := net.Listen("tcp", ":4987")
+	server, err := comm.Listen(":4987")
 	if err != nil {
 		log.Printf("Unable to listen on port :4987: %v", err)
 		os.Exit(1)
@@ -186,24 +181,22 @@ func nextRoundRobinClient() (client clientInbox) {
 	return
 }
 
-func handleClient(conn net.Conn) {
-	defer conn.Close()
+func handleClient(stream *comm.Stream) {
+	defer stream.Close()
 	var instanceId string
 
-	stream, err := comm.NewStream(conn)
+	instanceId, err := stream.ReadLine()
 	if err != nil {
-		log.Printf("Unable to create stream: %v\n", err)
+		log.Printf("Unable to identify client: %v\n", err)
 		return
 	}
 
-	stream.ReadWith(func() (err error) {
-		instanceId, err = stream.Reader.ReadString(byte('\n'))
-		return
-	})
-
 	if instanceId == "-PING\n" {
 		log.Printf("got ping: -PING; answering with: +PONG\n")
-		fmt.Fprint(conn, "+PONG\n")
+		err = stream.WriteLine("+PONG")
+		if err != nil {
+			log.Printf("Unable to answer with +PONG: %v\n", err)
+		}
 		return
 	}
 
@@ -220,34 +213,8 @@ func handleClient(conn net.Conn) {
 
 	go func() {
 		for {
-			var messageSize int32
-			err := stream.ReadWith(func() error {
-				return binary.Read(stream.Reader, binary.LittleEndian, &messageSize)
-			})
-			if err != nil {
-				ackErrors <- err
-				continue
-			}
-
-			err = stream.ReadWith(func() error {
-				if int32(stream.Reader.Len()) < messageSize {
-					return comm.EOFError
-				}
-				return nil
-			})
-			if err != nil {
-				ackErrors <- err
-				continue
-			}
-
-			rawAck := stream.Reader.Next(int(messageSize))
-			if err != nil {
-				ackErrors <- err
-				continue
-			}
-
 			var ack messages.MessageAck
-			err = proto.Unmarshal(rawAck, &ack)
+			err = stream.ReadMessage(&ack)
 			if err != nil {
 				ackErrors <- err
 				continue
@@ -265,32 +232,9 @@ func handleClient(conn net.Conn) {
 		select {
 		case message := <-inbox:
 			go func(message messages.Message, dead chan bool) {
-				buf := new(bytes.Buffer)
-				rawMessage, err := proto.Marshal(&message)
+				err := stream.WriteMessage(&message)
 				if err != nil {
-					log.Printf("Unable to marshal message: %v\n", err)
-					return
-				}
-
-				var size int32 = int32(len(rawMessage))
-				err = binary.Write(buf, binary.LittleEndian, size)
-				if err != nil {
-					log.Printf("Unable to dump message size to buffer: %v\n", err)
-					dead <- true
-					return
-				}
-
-				_, err = buf.Write(rawMessage)
-				if err != nil {
-					log.Printf("Unable to dump raw message to buffer: %v\n", err)
-					dead <- true
-					return
-				}
-
-				log.Printf("Gonna send message: %v\n", buf.Bytes())
-				_, err = buf.WriteTo(conn)
-				if err != nil {
-					log.Printf("Unable to write to client connection: %v\n", err)
+					log.Printf("Unable to send message to client: %v\n", err)
 					dead <- true
 					return
 				}
