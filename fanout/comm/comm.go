@@ -3,8 +3,8 @@ package comm
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"io"
+	"log"
 )
 
 const (
@@ -31,7 +31,7 @@ func NewStream(conn io.Reader) (*Stream, error) {
 		return nil, err
 	}
 
-	fmt.Printf("Read %d bytes\n", n)
+	log.Printf("Read %d bytes\n", n)
 
 	stream := &Stream{
 		data:   data,
@@ -60,7 +60,7 @@ func (s *Stream) readWith(fn func() error) (errorTrampolineFunc, error) {
 		return nil, err
 	}
 
-	fmt.Printf("Read %d bytes\n", n)
+	log.Printf("Read %d bytes\n", n)
 
 	s.Reader = bytes.NewBuffer(
 		append(bytesBefore, s.data[0:n]...),
