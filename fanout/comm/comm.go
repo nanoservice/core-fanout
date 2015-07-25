@@ -164,7 +164,7 @@ func (s *Stream) readWith(fn func() error) (newFn errorTrampolineFunc, err error
 	bytesBefore := make([]byte, s.reader.Len())
 	copy(bytesBefore, s.reader.Bytes())
 
-	e := Error.Return(fn())
+	e := Error.Bind(fn)
 
 	err = e.OnError().Bind(func() (err error) {
 		n, err = s.conn.Read(s.data)
@@ -188,7 +188,7 @@ func (s *Stream) readWith(fn func() error) (newFn errorTrampolineFunc, err error
 		return nil
 	})
 
-	return newFn, err
+	return
 }
 
 func errorTrampoline(fn errorTrampolineFunc, err error) error {
