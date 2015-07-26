@@ -7,6 +7,7 @@ import (
 	"github.com/nanoservice/core-fanout/fanout/log"
 	"github.com/nanoservice/core-fanout/fanout/messages"
 	"os"
+	"os/signal"
 	"runtime/pprof"
 	"sync"
 	"time"
@@ -60,9 +61,17 @@ func main() {
 		f, err := os.Create(*cpuprofile)
 		if err != nil {
 			log.Printf("Unable to create cpuprofile file: %v, moving on\n", err)
+		} else {
+			pprof.StartCPUProfile(f)
+			defer dumpCPUProfile()
+			c := make(chan os.Signal, 1)
+			signal.Notify(c, os.Interrupt)
+			go func() {
+				<-c
+				dumpCPUProfile()
+				os.Exit(0)
+			}()
 		}
-		pprof.StartCPUProfile(f)
-		defer pprof.StopCPUProfile()
 	}
 
 	server, err := comm.Listen(":4987")
@@ -98,6 +107,11 @@ func main() {
 
 		go handleClient(conn)
 	}
+}
+
+func dumpCPUProfile() {
+	log.Println("Dumping cpu profile")
+	pprof.StopCPUProfile()
 }
 
 func handleConsumer(consumer kafka.PartitionConsumer) {
