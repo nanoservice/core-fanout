@@ -43,7 +43,7 @@ It uses Apache Kafka as a Bus.
      * [ ] one event SHOULD be received by client at least once
      * [ ] one event COULD be received by client more than once
  * [ ] logging
-   * [ ] use standard logging library instead of fmt
+   * [x] use standard logging library instead of fmt
    * [ ] `--verbose` option for showing logs with `severity > INFO`
  * [ ] testing
    * [x] basic integration tests
