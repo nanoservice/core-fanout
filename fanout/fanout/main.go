@@ -7,6 +7,8 @@ import (
 	"github.com/nanoservice/core-fanout/fanout/log"
 	"github.com/nanoservice/core-fanout/fanout/messages"
 	"os"
+	"os/signal"
+	"runtime/pprof"
 	"sync"
 	"time"
 )
@@ -31,6 +33,8 @@ var (
 	}
 	blackHole = clientInbox{make(chan messages.Message), 1}
 	acks      = make(map[messages.MessageAck]chan bool)
+
+	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to a file")
 )
 
 var (
@@ -52,6 +56,23 @@ func main() {
 	flag.StringVar(&myId, "id", "", "cluster id, typically a consuming service name")
 	flag.StringVar(&topic, "topic", "", "topic to consume")
 	flag.Parse()
+
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Printf("Unable to create cpuprofile file: %v, moving on\n", err)
+		} else {
+			pprof.StartCPUProfile(f)
+			defer dumpCPUProfile()
+			c := make(chan os.Signal, 1)
+			signal.Notify(c, os.Interrupt)
+			go func() {
+				<-c
+				dumpCPUProfile()
+				os.Exit(0)
+			}()
+		}
+	}
 
 	server, err := comm.Listen(":4987")
 	if err != nil {
@@ -86,6 +107,11 @@ func main() {
 
 		go handleClient(conn)
 	}
+}
+
+func dumpCPUProfile() {
+	log.Println("Dumping cpu profile")
+	pprof.StopCPUProfile()
 }
 
 func handleConsumer(consumer kafka.PartitionConsumer) {
@@ -266,8 +292,10 @@ func handleClient(stream *comm.Stream) {
 				}()
 			}(message, dead)
 
-		case <-ackErrors:
+		case err := <-ackErrors:
+			log.V(3).Printf("Got ack error: %v\n", err)
 		case <-dead:
+			log.V(2).Printf("Client %v disconnected\n", instanceId)
 			clientDead(instanceId)
 		}
 	}

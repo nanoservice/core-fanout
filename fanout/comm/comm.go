@@ -10,6 +10,7 @@ import (
 	Error "github.com/nanoservice/monad.go/error"
 	"io"
 	"net"
+	"time"
 )
 
 const (
@@ -167,7 +168,12 @@ func (s *Stream) readWith(fn func() error) (newFn errorTrampolineFunc, err error
 	e := Error.Bind(fn)
 
 	err = e.OnError().Bind(func() (err error) {
+		log.V(4).Println("Going to read from connection")
 		n, err = s.conn.Read(s.data)
+		log.V(4).Printf("Read from connection: %d, %v\n", n, err)
+		if n == 0 {
+			time.Sleep(5 * time.Millisecond)
+		}
 		return
 
 	}).Bind(func() error {
