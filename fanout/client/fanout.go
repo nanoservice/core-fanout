@@ -3,8 +3,8 @@ package fanout
 import (
 	"errors"
 	"github.com/nanoservice/core-fanout/fanout/comm"
+	"github.com/nanoservice/core-fanout/fanout/log"
 	"github.com/nanoservice/core-fanout/fanout/messages"
-	"log"
 )
 
 type Consumer struct {
@@ -105,7 +105,7 @@ func (c *Consumer) listen() error {
 						log.Printf("Unable to send message ack: %v\n", err)
 					}
 
-					log.Printf("Sent ack from %s: %v\n", c.instanceId, *ack)
+					log.V(2).Printf("Sent ack from %s: %v\n", c.instanceId, *ack)
 				}
 			}(message)
 
