@@ -15,7 +15,7 @@ It uses Apache Kafka as a Bus.
  * [ ] subscribe to one topic
    * [x] subscribe to test topic
    * [x] subscribe to all partitions of this topic
-   * [ ] subscribe to topic provided by commandline argument
+   * [x] subscribe to topic provided by commandline argument
    * [x] listen to multiple kafkas (up to 3)
    * [ ] detect count of available kafkas and listen to all of them
  * [ ] fanout to the clients
