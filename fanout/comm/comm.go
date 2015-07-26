@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/golang/protobuf/proto"
+	"github.com/nanoservice/core-fanout/fanout/log"
 	Error "github.com/nanoservice/monad.go/error"
 	"io"
-	"log"
 	"net"
 )
 
@@ -171,7 +171,7 @@ func (s *Stream) readWith(fn func() error) (newFn errorTrampolineFunc, err error
 		return
 
 	}).Bind(func() error {
-		log.Printf("Re-read %d bytes\n", n)
+		log.V(2).Printf("Re-read %d bytes\n", n)
 
 		s.reader = bytes.NewBuffer(
 			append(bytesBefore, s.data[0:n]...),

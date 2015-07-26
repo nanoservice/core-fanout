@@ -1,10 +1,11 @@
 package main
 
 import (
+	"flag"
 	kafka "github.com/Shopify/sarama"
 	"github.com/nanoservice/core-fanout/fanout/comm"
+	"github.com/nanoservice/core-fanout/fanout/log"
 	"github.com/nanoservice/core-fanout/fanout/messages"
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -38,6 +39,9 @@ var (
 		os.Getenv("KAFKA_2_PORT_9092_TCP_ADDR") + ":" + os.Getenv("KAFKA_2_PORT_9092_TCP_PORT"),
 		os.Getenv("KAFKA_3_PORT_9092_TCP_ADDR") + ":" + os.Getenv("KAFKA_3_PORT_9092_TCP_PORT"),
 	}
+
+	myId  = ""
+	topic = ""
 )
 
 const (
@@ -45,6 +49,10 @@ const (
 )
 
 func main() {
+	flag.StringVar(&myId, "id", "", "cluster id, typically a consuming service name")
+	flag.StringVar(&topic, "topic", "", "topic to consume")
+	flag.Parse()
+
 	server, err := comm.Listen(":4987")
 	if err != nil {
 		log.Printf("Unable to listen on port :4987: %v", err)
@@ -59,13 +67,15 @@ func main() {
 
 	go func() {
 		for message := range blackHole.inbox {
-			log.Printf("Got message in blackhole: %v\n", message)
+			log.V(2).Printf("Got message in blackhole: %v\n", message)
 			go func(message messages.Message) {
-				log.Printf("Gonna re-send message from blackhole: %v\n", message)
+				log.V(2).Printf("Gonna re-send message from blackhole: %v\n", message)
 				nextRoundRobinClient().inbox <- message
 			}(message)
 		}
 	}()
+
+	log.Println("Listening on port :4987")
 
 	for {
 		conn, err := server.Accept()
@@ -80,7 +90,7 @@ func main() {
 
 func handleConsumer(consumer kafka.PartitionConsumer) {
 	for message := range consumer.Messages() {
-		log.Printf("Got message: %v\n", message)
+		log.V(2).Printf("Got message: %v\n", message)
 		nextRoundRobinClient().inbox <- messages.Message{
 			Value:     message.Value,
 			Partition: message.Partition,
@@ -192,7 +202,7 @@ func handleClient(stream *comm.Stream) {
 	}
 
 	if instanceId == "-PING\n" {
-		log.Printf("got ping: -PING; answering with: +PONG\n")
+		log.V(1).Printf("got ping: -PING; answering with: +PONG\n")
 		err = stream.WriteLine("+PONG")
 		if err != nil {
 			log.Printf("Unable to answer with +PONG: %v\n", err)
@@ -200,7 +210,7 @@ func handleClient(stream *comm.Stream) {
 		return
 	}
 
-	log.Printf("got client: %s\n", instanceId)
+	log.V(1).Printf("got client: %s\n", instanceId)
 
 	inbox := make(chan messages.Message, CHANNEL_BUFFER_SIZE)
 	client := clientInbox{
@@ -221,7 +231,7 @@ func handleClient(stream *comm.Stream) {
 			}
 
 			if _, found := acks[ack]; found {
-				log.Printf("Got ack: %v\n", ack)
+				log.V(2).Printf("Got ack: %v\n", ack)
 				acks[ack] <- true
 			}
 		}
