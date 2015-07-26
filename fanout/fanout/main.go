@@ -292,8 +292,10 @@ func handleClient(stream *comm.Stream) {
 				}()
 			}(message, dead)
 
-		case <-ackErrors:
+		case err := <-ackErrors:
+			log.V(3).Printf("Got ack error: %v\n", err)
 		case <-dead:
+			log.V(2).Printf("Client %v disconnected\n", instanceId)
 			clientDead(instanceId)
 		}
 	}
