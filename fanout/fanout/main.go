@@ -100,7 +100,6 @@ func handleConsumer(consumer kafka.PartitionConsumer) {
 }
 
 func newConsumer() (masterConsumer kafka.Consumer, consumers []kafka.PartitionConsumer) {
-	topic := "test_topic"
 	config := kafka.NewConfig()
 	config.Net.KeepAlive = 30 * time.Second
 	config.Consumer.Retry.Backoff = 25 * time.Millisecond
