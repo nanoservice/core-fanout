@@ -42,9 +42,9 @@ It uses Apache Kafka as a Bus.
    * [ ] be at least "Eventually consistent":
      * [ ] one event SHOULD be received by client at least once
      * [ ] one event COULD be received by client more than once
- * [ ] logging
+ * [x] logging
    * [x] use standard logging library instead of fmt
-   * [ ] `--verbose` option for showing logs with `severity > INFO`
+   * [x] `-v` option for showing logs with `severity > INFO`
  * [ ] testing
    * [x] basic integration tests
    * [ ] special case integration tests (like network partition, for example)
