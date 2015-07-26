@@ -7,6 +7,7 @@ import (
 	"github.com/nanoservice/core-fanout/fanout/log"
 	"github.com/nanoservice/core-fanout/fanout/messages"
 	"os"
+	"runtime/pprof"
 	"sync"
 	"time"
 )
@@ -31,6 +32,8 @@ var (
 	}
 	blackHole = clientInbox{make(chan messages.Message), 1}
 	acks      = make(map[messages.MessageAck]chan bool)
+
+	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to a file")
 )
 
 var (
@@ -52,6 +55,15 @@ func main() {
 	flag.StringVar(&myId, "id", "", "cluster id, typically a consuming service name")
 	flag.StringVar(&topic, "topic", "", "topic to consume")
 	flag.Parse()
+
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Printf("Unable to create cpuprofile file: %v, moving on\n", err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
 
 	server, err := comm.Listen(":4987")
 	if err != nil {
