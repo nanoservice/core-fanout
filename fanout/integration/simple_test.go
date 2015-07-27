@@ -61,8 +61,10 @@ func TestMain(m *testing.M) {
 
 func TestOneConsumer(t *testing.T) {
 	log.Printf("===== TestOneConsumer =====")
-	inbox := subscriptionInbox(t, "INSTANCE_0")
+	inbox, consumer := subscriptionInbox(t, "INSTANCE_0")
 	producer := newProducer()
+
+	defer consumer.Close()
 
 	producer.Publish(messageA)
 	producer.Publish(messageB)
@@ -81,9 +83,12 @@ func TestOneConsumer(t *testing.T) {
 
 func TestMultipleConsumers(t *testing.T) {
 	log.Printf("===== TestMultipleConsumers =====")
-	inboxA := subscriptionInbox(t, "INSTANCE_0")
-	inboxB := subscriptionInbox(t, "INSTANCE_1")
+	inboxA, consumerA := subscriptionInbox(t, "INSTANCE_0")
+	inboxB, consumerB := subscriptionInbox(t, "INSTANCE_1")
 	producer := newProducer()
+
+	defer consumerA.Close()
+	defer consumerB.Close()
 
 	producer.Publish(messageA)
 	producer.Publish(messageB)
@@ -103,8 +108,10 @@ func TestMultipleConsumers(t *testing.T) {
 func TestDeadConsumer(t *testing.T) {
 	log.Printf("===== TestDeadConsumer =====")
 	deadSubscriptionInbox(t, "INSTANCE_0")
-	inbox := subscriptionInbox(t, "INSTANCE_1")
+	inbox, consumer := subscriptionInbox(t, "INSTANCE_1")
 	producer := newProducer()
+
+	defer consumer.Close()
 
 	producer.Publish(messageA)
 	producer.Publish(messageB)
@@ -123,14 +130,16 @@ func TestDeadConsumer(t *testing.T) {
 
 func deadSubscriptionInbox(t *testing.T, instanceId string) {
 	consumer := newConsumer(instanceId)
+	defer consumer.Close()
 	consumer.SendAcks = false
 	consumer.Subscribe(func(raw messages.Message) {})
 }
 
-func subscriptionInbox(t *testing.T, instanceId string) (inbox chan *userneed.UserNeed) {
+func subscriptionInbox(t *testing.T, instanceId string) (inbox chan *userneed.UserNeed, consumer *fanout.Consumer) {
 	inbox = make(chan *userneed.UserNeed)
+	consumer = newConsumer(instanceId)
 
-	newConsumer(instanceId).Subscribe(func(raw messages.Message) {
+	consumer.Subscribe(func(raw messages.Message) {
 		message := &userneed.UserNeed{}
 		log.Printf("Got raw message: %v with id=%d:%d\n", raw.Value, raw.Partition, raw.Offset)
 		err := proto.Unmarshal(raw.Value, message)

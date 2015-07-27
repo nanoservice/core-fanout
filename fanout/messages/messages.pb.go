@@ -39,9 +39,10 @@ func (m *Subscribe) String() string { return proto.CompactTextString(m) }
 func (*Subscribe) ProtoMessage()    {}
 
 type Message struct {
-	Partition int32  `protobuf:"varint,1,opt,name=partition" json:"partition,omitempty"`
-	Offset    int64  `protobuf:"varint,2,opt,name=offset" json:"offset,omitempty"`
-	Value     []byte `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	Partition    int32  `protobuf:"varint,1,opt,name=partition" json:"partition,omitempty"`
+	Offset       int64  `protobuf:"varint,2,opt,name=offset" json:"offset,omitempty"`
+	Value        []byte `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	IsAckRequest bool   `protobuf:"varint,4,opt,name=isAckRequest" json:"isAckRequest,omitempty"`
 }
 
 func (m *Message) Reset()         { *m = Message{} }
