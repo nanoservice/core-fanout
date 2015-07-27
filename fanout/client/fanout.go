@@ -8,10 +8,13 @@ import (
 )
 
 type Consumer struct {
+	SendAcks bool
+
 	fanouts    []string
 	instanceId string
 	messages   chan messages.Message
-	SendAcks   bool
+	stream     *comm.Stream
+	closeChan  chan bool
 }
 
 const (
@@ -69,25 +72,38 @@ func (c *Consumer) Subscribe(fn func(raw messages.Message)) {
 	}()
 }
 
+func (c *Consumer) Close() {
+	go func() { c.closeChan <- true }()
+}
+
 func (c *Consumer) listen() error {
 	go func() {
-		stream, err := comm.Dial(c.fanouts[0])
+		var err error
+		c.stream, err = comm.Dial(c.fanouts[0])
 		if err != nil {
 			log.Printf("Unable to obtain stream: %v\n", err)
 			return
 		}
 
-		defer stream.Close()
+		defer c.stream.Close()
 
-		err = stream.WriteLine(c.instanceId)
+		err = c.stream.WriteLine(c.instanceId)
 		if err != nil {
 			log.Printf("Unable to send own instance id: %v\n", err)
 			return
 		}
 
 		for {
+			select {
+			case _, ok := <-c.closeChan:
+				if ok {
+					return
+				}
+			default:
+			}
+
 			var message messages.Message
-			err := stream.ReadMessage(&message)
+			err := c.stream.ReadMessage(&message)
 			if err != nil {
 				log.Printf("Unable to unmarshal message: %v\n", err)
 				continue
@@ -100,7 +116,7 @@ func (c *Consumer) listen() error {
 						Offset:    message.Offset,
 					}
 
-					err := stream.WriteMessage(ack)
+					err := c.stream.WriteMessage(ack)
 					if err != nil {
 						log.Printf("Unable to send message ack: %v\n", err)
 					}
@@ -109,7 +125,9 @@ func (c *Consumer) listen() error {
 				}
 			}(message)
 
-			c.messages <- message
+			if !message.IsAckRequest {
+				c.messages <- message
+			}
 		}
 	}()
 

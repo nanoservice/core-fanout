@@ -24,7 +24,7 @@ It uses Apache Kafka as a Bus.
    * [x] send message to other client if there is no ack
    * [x] buffer consumed messages if there are no clients and try to re-send as
      soon a there are
-   * [ ] detect closed connections properly (send heartbeats to the clients and
+   * [x] detect closed connections properly (send heartbeats to the clients and
      expect an ack back)
    * [ ] stop consuming the topic if there are no clients
    * [ ] maintain the offset per each partition in zookeeper

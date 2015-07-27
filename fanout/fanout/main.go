@@ -36,6 +36,13 @@ var (
 	acks      = make(map[messages.MessageAck]chan bool)
 
 	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to a file")
+
+	ackRequest = &messages.Message{
+		Value:        make([]byte, 0),
+		Partition:    -1,
+		Offset:       -1,
+		IsAckRequest: true,
+	}
 )
 
 var (
@@ -117,9 +124,10 @@ func handleConsumer(consumer kafka.PartitionConsumer) {
 	for message := range consumer.Messages() {
 		log.V(2).Printf("Got message: %v\n", message)
 		nextRoundRobinClient().inbox <- messages.Message{
-			Value:     message.Value,
-			Partition: message.Partition,
-			Offset:    message.Offset,
+			Value:        message.Value,
+			Partition:    message.Partition,
+			Offset:       message.Offset,
+			IsAckRequest: false,
 		}
 	}
 }
@@ -265,31 +273,10 @@ func handleClient(stream *comm.Stream) {
 	for {
 		select {
 		case message := <-inbox:
-			go func(message messages.Message, dead chan bool) {
-				err := stream.WriteMessage(&message)
-				if err != nil {
-					log.Printf("Unable to send message to client: %v\n", err)
-					dead <- true
-					return
-				}
+			go sendMessageAndExpectAnAck(stream, dead, &message)
 
-				expectedAck := messages.MessageAck{
-					Partition: message.Partition,
-					Offset:    message.Offset,
-				}
-				acks[expectedAck] = make(chan bool)
-
-				go func() {
-					select {
-					case _ = <-acks[expectedAck]:
-						break
-					case <-time.After(50 * time.Millisecond):
-						blackHole.inbox <- message
-						dead <- true
-					}
-					delete(acks, expectedAck)
-				}()
-			}(message, dead)
+		case <-time.Tick(75 * time.Millisecond):
+			go sendMessageAndExpectAnAck(stream, dead, ackRequest)
 
 		case err := <-ackErrors:
 			log.V(3).Printf("Got ack error: %v\n", err)
@@ -315,4 +302,32 @@ func getBrokers() (brokers []string) {
 		brokers = append(brokers, broker)
 	}
 	return
+}
+
+func sendMessageAndExpectAnAck(stream *comm.Stream, dead chan bool, message *messages.Message) {
+	err := stream.WriteMessage(message)
+	if err != nil {
+		log.Printf("Unable to send message to client: %v\n", err)
+		dead <- true
+		return
+	}
+
+	expectedAck := messages.MessageAck{
+		Partition: message.Partition,
+		Offset:    message.Offset,
+	}
+	acks[expectedAck] = make(chan bool)
+
+	go func() {
+		select {
+		case _ = <-acks[expectedAck]:
+			break
+		case <-time.After(50 * time.Millisecond):
+			if !message.IsAckRequest {
+				blackHole.inbox <- *message
+			}
+			dead <- true
+		}
+		delete(acks, expectedAck)
+	}()
 }
