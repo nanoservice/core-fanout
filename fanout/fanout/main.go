@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	kafka "github.com/Shopify/sarama"
 	"github.com/nanoservice/core-fanout/fanout/comm"
 	"github.com/nanoservice/core-fanout/fanout/log"
@@ -38,11 +39,7 @@ var (
 )
 
 var (
-	kafkas = []string{
-		os.Getenv("KAFKA_1_PORT_9092_TCP_ADDR") + ":" + os.Getenv("KAFKA_1_PORT_9092_TCP_PORT"),
-		os.Getenv("KAFKA_2_PORT_9092_TCP_ADDR") + ":" + os.Getenv("KAFKA_2_PORT_9092_TCP_PORT"),
-		os.Getenv("KAFKA_3_PORT_9092_TCP_ADDR") + ":" + os.Getenv("KAFKA_3_PORT_9092_TCP_PORT"),
-	}
+	kafkas = getBrokers()
 
 	myId  = ""
 	topic = ""
@@ -73,6 +70,8 @@ func main() {
 			}()
 		}
 	}
+
+	log.V(2).Printf("Identified brokers: %v\n", kafkas)
 
 	server, err := comm.Listen(":4987")
 	if err != nil {
@@ -299,4 +298,21 @@ func handleClient(stream *comm.Stream) {
 			clientDead(instanceId)
 		}
 	}
+}
+
+func getBrokers() (brokers []string) {
+	brokers = make([]string, 0)
+
+	for i := 1; true; i++ {
+		addrEnvName := fmt.Sprintf("KAFKA_%d_PORT_9092_TCP_ADDR", i)
+		portEnvName := fmt.Sprintf("KAFKA_%d_PORT_9092_TCP_PORT", i)
+
+		broker := os.Getenv(addrEnvName) + ":" + os.Getenv(portEnvName)
+		if broker == ":" {
+			return
+		}
+
+		brokers = append(brokers, broker)
+	}
+	return
 }
