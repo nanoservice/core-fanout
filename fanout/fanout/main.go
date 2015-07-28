@@ -65,11 +65,9 @@ func main() {
 
 	log.V(2).Printf("Identified brokers: %v\n", kafkas)
 
-	server, err := comm.Listen(":4987")
-	if err != nil {
-		log.Printf("Unable to listen on port :4987: %v", err)
-		os.Exit(1)
-	}
+	Error.
+		Bind(Cluster.Listen).
+		OnErrorFn(ReportServerListenFatalError)
 
 	_, consumers := newConsumer()
 
@@ -88,16 +86,7 @@ func main() {
 	}()
 
 	log.Println("Listening on port :4987")
-
-	for {
-		conn, err := server.Accept()
-		if err != nil {
-			log.Printf("Unable to accept connection: %v", err)
-			continue
-		}
-
-		go handleClient(conn)
-	}
+	Cluster.Handle(handleClient)
 }
 
 func handleConsumer(consumer kafka.PartitionConsumer) {
