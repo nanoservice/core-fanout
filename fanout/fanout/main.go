@@ -7,9 +7,8 @@ import (
 	"github.com/nanoservice/core-fanout/fanout/comm"
 	"github.com/nanoservice/core-fanout/fanout/log"
 	"github.com/nanoservice/core-fanout/fanout/messages"
+	Error "github.com/nanoservice/monad.go/error"
 	"os"
-	"os/signal"
-	"runtime/pprof"
 	"sync"
 	"time"
 )
@@ -35,8 +34,6 @@ var (
 	blackHole = clientInbox{make(chan messages.Message), 1}
 	acks      = make(map[messages.MessageAck]chan bool)
 
-	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to a file")
-
 	ackRequest = &messages.Message{
 		Value:        make([]byte, 0),
 		Partition:    -1,
@@ -61,22 +58,10 @@ func main() {
 	flag.StringVar(&topic, "topic", "", "topic to consume")
 	flag.Parse()
 
-	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
-		if err != nil {
-			log.Printf("Unable to create cpuprofile file: %v, moving on\n", err)
-		} else {
-			pprof.StartCPUProfile(f)
-			defer dumpCPUProfile()
-			c := make(chan os.Signal, 1)
-			signal.Notify(c, os.Interrupt)
-			go func() {
-				<-c
-				dumpCPUProfile()
-				os.Exit(0)
-			}()
-		}
-	}
+	Error.
+		Bind(CPUProfile.Start).
+		OnErrorFn(ReportCPUProfileError)
+	defer CPUProfile.Stop()
 
 	log.V(2).Printf("Identified brokers: %v\n", kafkas)
 
@@ -113,11 +98,6 @@ func main() {
 
 		go handleClient(conn)
 	}
-}
-
-func dumpCPUProfile() {
-	log.Println("Dumping cpu profile")
-	pprof.StopCPUProfile()
 }
 
 func handleConsumer(consumer kafka.PartitionConsumer) {
