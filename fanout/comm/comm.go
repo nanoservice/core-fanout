@@ -23,6 +23,7 @@ var (
 
 type Server interface {
 	Accept() (stream Stream, err error)
+	Close()
 }
 
 type ServerT struct {
@@ -60,6 +61,8 @@ func (s *ServerT) Accept() (stream Stream, err error) {
 
 	return
 }
+
+func (s *ServerT) Close() { s.tcpServer.Close() }
 
 type Stream interface {
 	Close()

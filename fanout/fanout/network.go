@@ -25,8 +25,9 @@ func (c *ClusterT) Listen() (err error) {
 }
 
 func (c *ClusterT) Handle(fn func(comm.Stream)) {
-	for {
-		NewClient(c).Handle(fn)
+	var err error = nil
+	for err == nil {
+		err = NewClient(c).Handle(fn)
 	}
 }
 
@@ -39,11 +40,14 @@ func NewClient(cluster *ClusterT) *Client {
 	return &Client{Cluster: cluster}
 }
 
-func (c *Client) Handle(fn func(comm.Stream)) {
-	Error.Chain(
+func (c *Client) Handle(fn func(comm.Stream)) error {
+	err := Error.Chain(
 		c.accept,
 		c.handle(fn),
-	).OnErrorFn(ReportClientAcceptError)
+	)
+
+	err.OnErrorFn(ReportClientAcceptError)
+	return err.Err()
 }
 
 func (c *Client) accept() (err error) {
