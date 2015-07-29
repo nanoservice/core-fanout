@@ -192,7 +192,7 @@ func nextRoundRobinClient() (client clientInbox) {
 	return
 }
 
-func handleClient(stream *comm.Stream) {
+func handleClient(stream comm.Stream) {
 	defer stream.Close()
 	var instanceId string
 
@@ -274,7 +274,7 @@ func getBrokers() (brokers []string) {
 	return
 }
 
-func sendMessageAndExpectAnAck(stream *comm.Stream, dead chan bool, message *messages.Message) {
+func sendMessageAndExpectAnAck(stream comm.Stream, dead chan bool, message *messages.Message) {
 	err := stream.WriteMessage(message)
 	if err != nil {
 		log.Printf("Unable to send message to client: %v\n", err)

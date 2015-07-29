@@ -21,19 +21,15 @@ var (
 	EOFError = errors.New("Buffer is exhausted")
 )
 
-type Stream struct {
-	data   []byte
-	reader *bytes.Buffer
-	conn   io.ReadWriteCloser
+type Server interface {
+	Accept() (stream Stream, err error)
 }
 
-type Server struct {
+type ServerT struct {
 	tcpServer net.Listener
 }
 
-type errorTrampolineFunc func() (errorTrampolineFunc, error)
-
-func Listen(port string) (server *Server, err error) {
+func Listen(port string) (server Server, err error) {
 	var tcpServer net.Listener
 
 	err = Error.Bind(func() (err error) {
@@ -41,7 +37,7 @@ func Listen(port string) (server *Server, err error) {
 		return
 
 	}).Bind(func() error {
-		server = &Server{tcpServer}
+		server = &ServerT{tcpServer}
 		return nil
 
 	}).Err()
@@ -49,35 +45,7 @@ func Listen(port string) (server *Server, err error) {
 	return
 }
 
-func NewStream(conn io.ReadWriteCloser) (stream *Stream, err error) {
-	data := make([]byte, BufferSize)
-
-	stream = &Stream{
-		data:   data,
-		reader: bytes.NewBuffer(data[0:0]),
-		conn:   conn,
-	}
-
-	return
-}
-
-func Dial(tcpAddr string) (stream *Stream, err error) {
-	var conn net.Conn
-
-	err = Error.Bind(func() (err error) {
-		conn, err = net.Dial("tcp", tcpAddr)
-		return
-
-	}).Bind(func() (err error) {
-		stream, err = NewStream(conn)
-		return
-
-	}).Err()
-
-	return
-}
-
-func (s *Server) Accept() (stream *Stream, err error) {
+func (s *ServerT) Accept() (stream Stream, err error) {
 	var conn net.Conn
 
 	err = Error.Bind(func() (err error) {
@@ -93,15 +61,59 @@ func (s *Server) Accept() (stream *Stream, err error) {
 	return
 }
 
-func (s *Stream) Close() {
+type Stream interface {
+	Close()
+	ReadWith(fn func() error) error
+	ReadLine() (result string, err error)
+	WriteLine(line string) (err error)
+	ReadMessage(message proto.Message) error
+	WriteMessage(message proto.Message) error
+	readWith(fn func() error) (newFn errorTrampolineFunc, err error)
+}
+
+type StreamT struct {
+	data   []byte
+	reader *bytes.Buffer
+	conn   io.ReadWriteCloser
+}
+
+func NewStream(conn io.ReadWriteCloser) (stream Stream, err error) {
+	data := make([]byte, BufferSize)
+
+	stream = &StreamT{
+		data:   data,
+		reader: bytes.NewBuffer(data[0:0]),
+		conn:   conn,
+	}
+
+	return
+}
+
+func Dial(tcpAddr string) (stream Stream, err error) {
+	var conn net.Conn
+
+	err = Error.Bind(func() (err error) {
+		conn, err = net.Dial("tcp", tcpAddr)
+		return
+
+	}).Bind(func() (err error) {
+		stream, err = NewStream(conn)
+		return
+
+	}).Err()
+
+	return
+}
+
+func (s *StreamT) Close() {
 	s.conn.Close()
 }
 
-func (s *Stream) ReadWith(fn func() error) error {
+func (s *StreamT) ReadWith(fn func() error) error {
 	return errorTrampoline(s.readWith(fn))
 }
 
-func (s *Stream) ReadLine() (result string, err error) {
+func (s *StreamT) ReadLine() (result string, err error) {
 	err = s.ReadWith(func() (err error) {
 		result, err = s.reader.ReadString(byte('\n'))
 		return
@@ -109,12 +121,12 @@ func (s *Stream) ReadLine() (result string, err error) {
 	return
 }
 
-func (s *Stream) WriteLine(line string) (err error) {
+func (s *StreamT) WriteLine(line string) (err error) {
 	_, err = fmt.Fprintf(s.conn, "%s\n", line)
 	return
 }
 
-func (s *Stream) ReadMessage(message proto.Message) error {
+func (s *StreamT) ReadMessage(message proto.Message) error {
 	var messageSize int32
 
 	return Error.Bind(func() error {
@@ -137,7 +149,7 @@ func (s *Stream) ReadMessage(message proto.Message) error {
 	}).Err()
 }
 
-func (s *Stream) WriteMessage(message proto.Message) error {
+func (s *StreamT) WriteMessage(message proto.Message) error {
 	buf := new(bytes.Buffer)
 	var rawMessage []byte
 
@@ -160,7 +172,7 @@ func (s *Stream) WriteMessage(message proto.Message) error {
 	}).Err()
 }
 
-func (s *Stream) readWith(fn func() error) (newFn errorTrampolineFunc, err error) {
+func (s *StreamT) readWith(fn func() error) (newFn errorTrampolineFunc, err error) {
 	var n int
 	bytesBefore := make([]byte, s.reader.Len())
 	copy(bytesBefore, s.reader.Bytes())
@@ -196,6 +208,8 @@ func (s *Stream) readWith(fn func() error) (newFn errorTrampolineFunc, err error
 
 	return
 }
+
+type errorTrampolineFunc func() (errorTrampolineFunc, error)
 
 func errorTrampoline(fn errorTrampolineFunc, err error) error {
 	if err != nil {

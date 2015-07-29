@@ -13,7 +13,7 @@ type Consumer struct {
 	fanouts    []string
 	instanceId string
 	messages   chan messages.Message
-	stream     *comm.Stream
+	stream     comm.Stream
 	closeChan  chan bool
 }
 
