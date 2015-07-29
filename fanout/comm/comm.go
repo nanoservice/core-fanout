@@ -68,7 +68,6 @@ type Stream interface {
 	WriteLine(line string) (err error)
 	ReadMessage(message proto.Message) error
 	WriteMessage(message proto.Message) error
-	readWith(fn func() error) (newFn errorTrampolineFunc, err error)
 }
 
 type StreamT struct {
