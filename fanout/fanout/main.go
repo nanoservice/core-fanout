@@ -239,12 +239,13 @@ func handleClient(stream *comm.Stream) {
 	}()
 
 	dead := make(chan bool)
+	everySoOften := time.Tick(75 * time.Millisecond)
 	for {
 		select {
 		case message := <-inbox:
 			go sendMessageAndExpectAnAck(stream, dead, &message)
 
-		case <-time.Tick(75 * time.Millisecond):
+		case <-everySoOften:
 			go sendMessageAndExpectAnAck(stream, dead, ackRequest)
 
 		case err := <-ackErrors:
